@@ -1,0 +1,13 @@
+name: Security (MSDO)
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  msdo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Microsoft Security DevOps
+        uses: microsoft/security-devops-action@v1
