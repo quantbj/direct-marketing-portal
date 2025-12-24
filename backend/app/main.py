@@ -51,8 +51,8 @@ def get_contract(contract_id: int):
 
 
 @app.get("/contracts", response_model=list[ContractResponse])
-def list_contracts():
-    """List all contracts."""
+def list_contracts(skip: int = 0, limit: int = 100):
+    """List contracts with pagination."""
     with Session(engine) as session:
-        contracts = session.query(Contract).all()
+        contracts = session.query(Contract).offset(skip).limit(limit).all()
         return contracts

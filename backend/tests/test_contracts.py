@@ -26,6 +26,18 @@ def test_create_contract():
     assert "updated_at" in data
 
 
+def test_create_contract_invalid_email():
+    """Test creating a contract with invalid email."""
+    response = client.post(
+        "/contracts",
+        json={
+            "customer_name": "John Doe",
+            "customer_email": "invalid-email",
+        },
+    )
+    assert response.status_code == 422
+
+
 def test_get_contract():
     """Test getting a contract by ID."""
     # Create a contract first
@@ -78,3 +90,28 @@ def test_list_contracts():
     data = response.json()
     assert isinstance(data, list)
     assert len(data) >= 2
+
+
+def test_list_contracts_pagination():
+    """Test pagination for contracts list."""
+    # Create multiple contracts
+    for i in range(5):
+        client.post(
+            "/contracts",
+            json={
+                "customer_name": f"User {i}",
+                "customer_email": f"user{i}@example.com",
+            },
+        )
+
+    # Test limit parameter
+    response = client.get("/contracts?limit=2")
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data) <= 2
+
+    # Test skip parameter
+    response = client.get("/contracts?skip=3")
+    assert response.status_code == 200
+    data = response.json()
+    assert isinstance(data, list)
