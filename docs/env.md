@@ -1,7 +1,7 @@
 # Environment variables
 
 ## Backend
-- (none yet)
+- `DATABASE_URL=postgresql+psycopg://app:app@localhost:5432/app` - PostgreSQL connection URL
 
 ## Frontend
 - (none yet)
