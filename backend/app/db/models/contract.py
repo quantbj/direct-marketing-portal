@@ -1,32 +1,39 @@
-import enum
-from datetime import datetime
+import uuid
+from datetime import date, datetime
+from typing import Optional
 
-from sqlalchemy import Enum, Integer, String, func
+from sqlalchemy import CheckConstraint, Date, Float, Numeric, String, func
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
 
 
-class ContractStatus(str, enum.Enum):
-    """Contract status enum."""
-
-    DRAFT = "draft"
-    ACTIVE = "active"
-    TERMINATED = "terminated"
-
-
 class Contract(Base):
-    """Contract domain model for direct marketing agreements."""
+    """Contract domain model for energy direct marketing agreements."""
 
     __tablename__ = "contracts"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    customer_name: Mapped[str] = mapped_column(String, nullable=False)
-    customer_email: Mapped[str] = mapped_column(String, nullable=False)
-    status: Mapped[ContractStatus] = mapped_column(
-        Enum(ContractStatus), nullable=False, default=ContractStatus.DRAFT
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    start_date: Mapped[date] = mapped_column(Date, nullable=False)
+    end_date: Mapped[date] = mapped_column(Date, nullable=False)
+    location_lat: Mapped[float] = mapped_column(Float, nullable=False)
+    location_lon: Mapped[float] = mapped_column(Float, nullable=False)
+    nab: Mapped[int] = mapped_column(nullable=False)
+    technology: Mapped[str] = mapped_column(String, nullable=False)
+    nominal_capacity: Mapped[float] = mapped_column(
+        Numeric(precision=10, scale=2), nullable=False
+    )  # unit = kW
+    indexation: Mapped[str] = mapped_column(String, nullable=False)
+    quantity_type: Mapped[str] = mapped_column(String, nullable=False)
+
+    # Technology-specific fields (nullable)
+    solar_direction: Mapped[Optional[int]] = mapped_column(nullable=True)
+    solar_inclination: Mapped[Optional[int]] = mapped_column(nullable=True)
+    wind_turbine_height: Mapped[Optional[float]] = mapped_column(
+        Numeric(precision=10, scale=2), nullable=True
     )
-    doc_version: Mapped[str] = mapped_column(String, nullable=False, default="1.0")
+
     created_at: Mapped[datetime] = mapped_column(
         server_default=func.timezone("UTC", func.now()), nullable=False
     )
@@ -34,4 +41,10 @@ class Contract(Base):
         server_default=func.timezone("UTC", func.now()),
         onupdate=func.timezone("UTC", func.now()),
         nullable=False,
+    )
+
+    __table_args__ = (
+        CheckConstraint("location_lat >= -90 AND location_lat <= 90", name="valid_latitude"),
+        CheckConstraint("location_lon >= -180 AND location_lon <= 180", name="valid_longitude"),
+        CheckConstraint("nominal_capacity > 0", name="positive_capacity"),
     )
