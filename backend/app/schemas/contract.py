@@ -64,7 +64,7 @@ class ContractCreate(BaseModel):
         if v is not None:
             technology = info.data.get("technology")
             if technology != Technology.SOLAR:
-                raise ValueError(f"{info.field_name} should only be provided for solar technology")
+                raise ValueError("Solar fields should only be provided for solar technology")
         return v
 
     @field_validator("wind_turbine_height")

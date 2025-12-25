@@ -196,18 +196,18 @@ def test_list_contracts():
 
 def test_list_contracts_pagination():
     """Test pagination for contracts list."""
-    # Create multiple contracts
+    # Create multiple contracts with small increments to stay within valid coordinate ranges
     for i in range(5):
         client.post(
             "/contracts",
             json={
                 "start_date": "2024-01-01",
                 "end_date": "2024-12-31",
-                "location_lat": 51.5 + i * 0.1,
-                "location_lon": 4.3 + i * 0.1,
+                "location_lat": 51.0 + i * 0.1,  # 51.0 to 51.4, within valid range
+                "location_lon": 4.0 + i * 0.1,  # 4.0 to 4.4, within valid range
                 "nab": 100000 + i,
                 "technology": "solar",
-                "nominal_capacity": 100.0 + i * 10,
+                "nominal_capacity": 100.0 + i * 10,  # Increment capacity by 10 kW per contract
                 "indexation": "day_ahead",
                 "quantity_type": "pay_as_produced",
             },
