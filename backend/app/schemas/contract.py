@@ -53,18 +53,32 @@ class ContractCreate(BaseModel):
     @classmethod
     def validate_dates(cls, v: date, info) -> date:
         """Validate end_date is after start_date."""
-        if "start_date" in info.data and v < info.data["start_date"]:
+        if "start_date" in info.data and v <= info.data["start_date"]:
             raise ValueError("end_date must be after start_date")
         return v
 
-    @field_validator("solar_direction", "solar_inclination")
+    @field_validator("solar_direction")
     @classmethod
-    def validate_solar_fields(cls, v: Optional[int], info) -> Optional[int]:
-        """Validate solar fields are only provided for solar technology."""
+    def validate_solar_direction(cls, v: Optional[int], info) -> Optional[int]:
+        """Validate solar direction field."""
         if v is not None:
             technology = info.data.get("technology")
             if technology != Technology.SOLAR:
                 raise ValueError("Solar fields should only be provided for solar technology")
+            if not 0 <= v <= 360:
+                raise ValueError("Solar direction must be between 0 and 360 degrees")
+        return v
+
+    @field_validator("solar_inclination")
+    @classmethod
+    def validate_solar_inclination(cls, v: Optional[int], info) -> Optional[int]:
+        """Validate solar inclination field."""
+        if v is not None:
+            technology = info.data.get("technology")
+            if technology != Technology.SOLAR:
+                raise ValueError("Solar fields should only be provided for solar technology")
+            if not 0 <= v <= 90:
+                raise ValueError("Solar inclination must be between 0 and 90 degrees")
         return v
 
     @field_validator("wind_turbine_height")

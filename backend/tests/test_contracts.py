@@ -264,3 +264,62 @@ def test_create_contract_wind_field_on_solar():
         },
     )
     assert response.status_code == 422
+
+
+def test_create_contract_equal_dates():
+    """Test that start_date and end_date cannot be equal."""
+    response = client.post(
+        "/contracts",
+        json={
+            "start_date": "2024-01-01",
+            "end_date": "2024-01-01",  # Same as start_date
+            "location_lat": 51.5,
+            "location_lon": 4.3,
+            "nab": 123456,
+            "technology": "solar",
+            "nominal_capacity": 100.5,
+            "indexation": "day_ahead",
+            "quantity_type": "pay_as_produced",
+        },
+    )
+    assert response.status_code == 422
+
+
+def test_create_contract_invalid_solar_direction():
+    """Test that solar direction must be between 0 and 360 degrees."""
+    response = client.post(
+        "/contracts",
+        json={
+            "start_date": "2024-01-01",
+            "end_date": "2024-12-31",
+            "location_lat": 51.5,
+            "location_lon": 4.3,
+            "nab": 123456,
+            "technology": "solar",
+            "nominal_capacity": 100.5,
+            "indexation": "day_ahead",
+            "quantity_type": "pay_as_produced",
+            "solar_direction": 400,  # Invalid: > 360
+        },
+    )
+    assert response.status_code == 422
+
+
+def test_create_contract_invalid_solar_inclination():
+    """Test that solar inclination must be between 0 and 90 degrees."""
+    response = client.post(
+        "/contracts",
+        json={
+            "start_date": "2024-01-01",
+            "end_date": "2024-12-31",
+            "location_lat": 51.5,
+            "location_lon": 4.3,
+            "nab": 123456,
+            "technology": "solar",
+            "nominal_capacity": 100.5,
+            "indexation": "day_ahead",
+            "quantity_type": "pay_as_produced",
+            "solar_inclination": 100,  # Invalid: > 90
+        },
+    )
+    assert response.status_code == 422
