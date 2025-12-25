@@ -35,7 +35,6 @@ def test_create_solar_contract():
     """Test creating a new solar contract."""
     counterparty_id = create_test_counterparty()
     offer_id = get_test_offer_id()
-    offer_id = get_test_offer_id()
     response = client.post(
         "/contracts",
         json={
@@ -71,7 +70,6 @@ def test_create_solar_contract():
 def test_create_wind_contract():
     """Test creating a new wind contract."""
     counterparty_id = create_test_counterparty()
-    offer_id = get_test_offer_id()
     offer_id = get_test_offer_id()
     response = client.post(
         "/contracts",
@@ -387,7 +385,6 @@ def test_create_contract_invalid_solar_inclination():
     """Test that solar inclination must be between 0 and 90 degrees."""
     counterparty_id = create_test_counterparty()
     offer_id = get_test_offer_id()
-    offer_id = get_test_offer_id()
     response = client.post(
         "/contracts",
         json={
@@ -456,7 +453,6 @@ def test_create_contract_rejects_missing_offer():
 def test_create_contract_with_valid_offer_success():
     """Test creating a contract with a valid active offer."""
     counterparty_id = create_test_counterparty()
-    offer_id = get_test_offer_id()
     offer_id = get_test_offer_id()
     response = client.post(
         "/contracts",

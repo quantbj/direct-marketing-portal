@@ -15,11 +15,7 @@ router = APIRouter(prefix="/offers", tags=["offers"])
 def list_offers():
     """List all active offers ordered by price."""
     with Session(engine) as session:
-        stmt = (
-            select(Offer)
-            .where(Offer.is_active == True)  # noqa: E712
-            .order_by(Offer.price_cents)
-        )
+        stmt = select(Offer).where(Offer.is_active.is_(True)).order_by(Offer.price_cents)
         offers = session.execute(stmt).scalars().all()
         return offers
 
