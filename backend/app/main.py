@@ -2,11 +2,14 @@ import uuid
 
 from fastapi import FastAPI, HTTPException
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db.models.contract import Contract
+from app.db.models.counterparty import Counterparty
 from app.db.session import engine
 from app.schemas.contract import ContractCreate, ContractResponse
+from app.schemas.counterparty import CounterpartyCreate, CounterpartyRead
 
 app = FastAPI(title="Direct Marketing Contracts API")
 
@@ -26,10 +29,56 @@ def health_db():
         raise HTTPException(status_code=503, detail="Database unavailable")
 
 
+@app.post("/counterparties", response_model=CounterpartyRead, status_code=201)
+def create_counterparty(counterparty_data: CounterpartyCreate):
+    """Create a new counterparty."""
+    with Session(engine) as session:
+        counterparty = Counterparty(
+            type=counterparty_data.type,
+            name=counterparty_data.name,
+            street=counterparty_data.street,
+            postal_code=counterparty_data.postal_code,
+            city=counterparty_data.city,
+            country=counterparty_data.country,
+            email=counterparty_data.email,
+        )
+        session.add(counterparty)
+        try:
+            session.commit()
+            session.refresh(counterparty)
+            return counterparty
+        except IntegrityError as e:
+            session.rollback()
+            if "uq_counterparties_email" in str(e.orig) or "unique" in str(e.orig).lower():
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Counterparty with email {counterparty_data.email} already exists",
+                )
+            raise
+
+
+@app.get("/counterparties/{counterparty_id}", response_model=CounterpartyRead)
+def get_counterparty(counterparty_id: int):
+    """Get a counterparty by ID."""
+    with Session(engine) as session:
+        counterparty = session.get(Counterparty, counterparty_id)
+        if not counterparty:
+            raise HTTPException(status_code=404, detail="Counterparty not found")
+        return counterparty
+
+
 @app.post("/contracts", response_model=ContractResponse, status_code=201)
 def create_contract(contract_data: ContractCreate):
     """Create a new contract."""
     with Session(engine) as session:
+        # Validate that counterparty exists
+        counterparty = session.get(Counterparty, contract_data.counterparty_id)
+        if not counterparty:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Counterparty with id {contract_data.counterparty_id} not found",
+            )
+
         contract = Contract(
             start_date=contract_data.start_date,
             end_date=contract_data.end_date,
@@ -43,6 +92,7 @@ def create_contract(contract_data: ContractCreate):
             solar_direction=contract_data.solar_direction,
             solar_inclination=contract_data.solar_inclination,
             wind_turbine_height=contract_data.wind_turbine_height,
+            counterparty_id=contract_data.counterparty_id,
         )
         session.add(contract)
         session.commit()
