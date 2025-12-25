@@ -19,6 +19,7 @@ class ContractCreate(BaseModel):
     nominal_capacity: float  # unit = kW
     indexation: Indexation
     quantity_type: QuantityType
+    counterparty_id: int
 
     # Technology-specific fields (nullable)
     solar_direction: Optional[int] = None
@@ -107,6 +108,7 @@ class ContractResponse(BaseModel):
     nominal_capacity: float
     indexation: str
     quantity_type: str
+    counterparty_id: Optional[int]
     solar_direction: Optional[int]
     solar_inclination: Optional[int]
     wind_turbine_height: Optional[float]

@@ -7,8 +7,26 @@ from app.main import app
 client = TestClient(app)
 
 
+def create_test_counterparty():
+    """Helper function to create a test counterparty."""
+    response = client.post(
+        "/counterparties",
+        json={
+            "type": "person",
+            "name": "Test Counterparty",
+            "street": "Test Street 1",
+            "postal_code": "12345",
+            "city": "Test City",
+            "country": "DE",
+            "email": f"test{uuid.uuid4().hex[:8]}@example.com",
+        },
+    )
+    return response.json()["id"]
+
+
 def test_create_solar_contract():
     """Test creating a new solar contract."""
+    counterparty_id = create_test_counterparty()
     response = client.post(
         "/contracts",
         json={
@@ -21,6 +39,7 @@ def test_create_solar_contract():
             "nominal_capacity": 100.5,
             "indexation": "day_ahead",
             "quantity_type": "pay_as_produced",
+            "counterparty_id": counterparty_id,
             "solar_direction": 180,
             "solar_inclination": 35,
         },
@@ -32,6 +51,7 @@ def test_create_solar_contract():
     assert data["solar_direction"] == 180
     assert data["solar_inclination"] == 35
     assert data["wind_turbine_height"] is None
+    assert data["counterparty_id"] == counterparty_id
     assert "id" in data
     assert "created_at" in data
     assert "updated_at" in data
@@ -39,6 +59,7 @@ def test_create_solar_contract():
 
 def test_create_wind_contract():
     """Test creating a new wind contract."""
+    counterparty_id = create_test_counterparty()
     response = client.post(
         "/contracts",
         json={
@@ -51,6 +72,7 @@ def test_create_wind_contract():
             "nominal_capacity": 250.0,
             "indexation": "month_ahead",
             "quantity_type": "pay_as_forecasted",
+            "counterparty_id": counterparty_id,
             "wind_turbine_height": 120.5,
         },
     )
@@ -64,6 +86,7 @@ def test_create_wind_contract():
 
 def test_create_contract_invalid_latitude():
     """Test creating a contract with invalid latitude."""
+    counterparty_id = create_test_counterparty()
     response = client.post(
         "/contracts",
         json={
@@ -76,6 +99,7 @@ def test_create_contract_invalid_latitude():
             "nominal_capacity": 100.5,
             "indexation": "day_ahead",
             "quantity_type": "pay_as_produced",
+            "counterparty_id": counterparty_id,
         },
     )
     assert response.status_code == 422
@@ -83,6 +107,7 @@ def test_create_contract_invalid_latitude():
 
 def test_create_contract_invalid_capacity():
     """Test creating a contract with invalid capacity."""
+    counterparty_id = create_test_counterparty()
     response = client.post(
         "/contracts",
         json={
@@ -95,6 +120,7 @@ def test_create_contract_invalid_capacity():
             "nominal_capacity": -10.0,  # Invalid: negative
             "indexation": "day_ahead",
             "quantity_type": "pay_as_produced",
+            "counterparty_id": counterparty_id,
         },
     )
     assert response.status_code == 422
@@ -102,6 +128,7 @@ def test_create_contract_invalid_capacity():
 
 def test_create_contract_invalid_dates():
     """Test creating a contract with end_date before start_date."""
+    counterparty_id = create_test_counterparty()
     response = client.post(
         "/contracts",
         json={
@@ -114,6 +141,7 @@ def test_create_contract_invalid_dates():
             "nominal_capacity": 100.5,
             "indexation": "day_ahead",
             "quantity_type": "pay_as_produced",
+            "counterparty_id": counterparty_id,
         },
     )
     assert response.status_code == 422
@@ -122,6 +150,7 @@ def test_create_contract_invalid_dates():
 def test_get_contract():
     """Test getting a contract by ID."""
     # Create a contract first
+    counterparty_id = create_test_counterparty()
     create_response = client.post(
         "/contracts",
         json={
@@ -134,6 +163,7 @@ def test_get_contract():
             "nominal_capacity": 100.5,
             "indexation": "day_ahead",
             "quantity_type": "pay_as_produced",
+            "counterparty_id": counterparty_id,
         },
     )
     contract_id = create_response.json()["id"]
@@ -157,6 +187,7 @@ def test_get_contract_not_found():
 def test_list_contracts():
     """Test listing all contracts."""
     # Create some contracts
+    counterparty_id = create_test_counterparty()
     client.post(
         "/contracts",
         json={
@@ -169,6 +200,7 @@ def test_list_contracts():
             "nominal_capacity": 100.5,
             "indexation": "day_ahead",
             "quantity_type": "pay_as_produced",
+            "counterparty_id": counterparty_id,
         },
     )
     client.post(
@@ -183,6 +215,7 @@ def test_list_contracts():
             "nominal_capacity": 250.0,
             "indexation": "month_ahead",
             "quantity_type": "pay_as_forecasted",
+            "counterparty_id": counterparty_id,
         },
     )
 
@@ -196,6 +229,7 @@ def test_list_contracts():
 
 def test_list_contracts_pagination():
     """Test pagination for contracts list."""
+    counterparty_id = create_test_counterparty()
     # Use small increments to ensure all contracts have valid lat/lon within acceptable ranges
     for i in range(5):
         client.post(
@@ -210,6 +244,7 @@ def test_list_contracts_pagination():
                 "nominal_capacity": 100.0 + i * 10,  # Increment capacity by 10 kW per contract
                 "indexation": "day_ahead",
                 "quantity_type": "pay_as_produced",
+                "counterparty_id": counterparty_id,
             },
         )
 
@@ -228,6 +263,7 @@ def test_list_contracts_pagination():
 
 def test_create_contract_solar_field_on_wind():
     """Test that solar fields cannot be provided for wind technology."""
+    counterparty_id = create_test_counterparty()
     response = client.post(
         "/contracts",
         json={
@@ -240,6 +276,7 @@ def test_create_contract_solar_field_on_wind():
             "nominal_capacity": 100.5,
             "indexation": "day_ahead",
             "quantity_type": "pay_as_produced",
+            "counterparty_id": counterparty_id,
             "solar_direction": 180,  # Invalid for wind
         },
     )
@@ -248,6 +285,7 @@ def test_create_contract_solar_field_on_wind():
 
 def test_create_contract_wind_field_on_solar():
     """Test that wind fields cannot be provided for solar technology."""
+    counterparty_id = create_test_counterparty()
     response = client.post(
         "/contracts",
         json={
@@ -260,6 +298,7 @@ def test_create_contract_wind_field_on_solar():
             "nominal_capacity": 100.5,
             "indexation": "day_ahead",
             "quantity_type": "pay_as_produced",
+            "counterparty_id": counterparty_id,
             "wind_turbine_height": 120.5,  # Invalid for solar
         },
     )
@@ -268,6 +307,7 @@ def test_create_contract_wind_field_on_solar():
 
 def test_create_contract_equal_dates():
     """Test that start_date and end_date cannot be equal."""
+    counterparty_id = create_test_counterparty()
     response = client.post(
         "/contracts",
         json={
@@ -280,6 +320,7 @@ def test_create_contract_equal_dates():
             "nominal_capacity": 100.5,
             "indexation": "day_ahead",
             "quantity_type": "pay_as_produced",
+            "counterparty_id": counterparty_id,
         },
     )
     assert response.status_code == 422
@@ -287,6 +328,7 @@ def test_create_contract_equal_dates():
 
 def test_create_contract_invalid_solar_direction():
     """Test that solar direction must be between 0 and 359 degrees."""
+    counterparty_id = create_test_counterparty()
     response = client.post(
         "/contracts",
         json={
@@ -299,6 +341,7 @@ def test_create_contract_invalid_solar_direction():
             "nominal_capacity": 100.5,
             "indexation": "day_ahead",
             "quantity_type": "pay_as_produced",
+            "counterparty_id": counterparty_id,
             "solar_direction": 360,  # Invalid: >= 360
         },
     )
@@ -307,6 +350,7 @@ def test_create_contract_invalid_solar_direction():
 
 def test_create_contract_invalid_solar_inclination():
     """Test that solar inclination must be between 0 and 90 degrees."""
+    counterparty_id = create_test_counterparty()
     response = client.post(
         "/contracts",
         json={
@@ -319,6 +363,7 @@ def test_create_contract_invalid_solar_inclination():
             "nominal_capacity": 100.5,
             "indexation": "day_ahead",
             "quantity_type": "pay_as_produced",
+            "counterparty_id": counterparty_id,
             "solar_inclination": 100,  # Invalid: > 90
         },
     )
