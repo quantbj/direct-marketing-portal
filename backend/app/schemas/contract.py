@@ -88,7 +88,7 @@ class ContractCreate(BaseModel):
         if v is not None:
             technology = info.data.get("technology")
             if technology != Technology.WIND:
-                raise ValueError("wind_turbine_height should only be provided for wind technology")
+                raise ValueError("Wind turbine height should only be provided for wind technology")
         return v
 
 

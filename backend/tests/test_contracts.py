@@ -196,8 +196,8 @@ def test_list_contracts():
 
 def test_list_contracts_pagination():
     """Test pagination for contracts list."""
+    # Use small increments to ensure all contracts have valid lat/lon within acceptable ranges
     for i in range(5):
-        # Create multiple contracts with tiny increments to stay within valid coordinate ranges
         client.post(
             "/contracts",
             json={
