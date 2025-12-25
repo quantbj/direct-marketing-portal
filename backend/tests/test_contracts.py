@@ -224,3 +224,43 @@ def test_list_contracts_pagination():
     assert response.status_code == 200
     data = response.json()
     assert isinstance(data, list)
+
+
+def test_create_contract_solar_field_on_wind():
+    """Test that solar fields cannot be provided for wind technology."""
+    response = client.post(
+        "/contracts",
+        json={
+            "start_date": "2024-01-01",
+            "end_date": "2024-12-31",
+            "location_lat": 51.5,
+            "location_lon": 4.3,
+            "nab": 123456,
+            "technology": "wind",
+            "nominal_capacity": 100.5,
+            "indexation": "day_ahead",
+            "quantity_type": "pay_as_produced",
+            "solar_direction": 180,  # Invalid for wind
+        },
+    )
+    assert response.status_code == 422
+
+
+def test_create_contract_wind_field_on_solar():
+    """Test that wind fields cannot be provided for solar technology."""
+    response = client.post(
+        "/contracts",
+        json={
+            "start_date": "2024-01-01",
+            "end_date": "2024-12-31",
+            "location_lat": 51.5,
+            "location_lon": 4.3,
+            "nab": 123456,
+            "technology": "solar",
+            "nominal_capacity": 100.5,
+            "indexation": "day_ahead",
+            "quantity_type": "pay_as_produced",
+            "wind_turbine_height": 120.5,  # Invalid for solar
+        },
+    )
+    assert response.status_code == 422
