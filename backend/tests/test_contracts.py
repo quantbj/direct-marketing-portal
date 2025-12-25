@@ -1,3 +1,5 @@
+import uuid
+
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -5,34 +7,113 @@ from app.main import app
 client = TestClient(app)
 
 
-def test_create_contract():
-    """Test creating a new contract."""
+def test_create_solar_contract():
+    """Test creating a new solar contract."""
     response = client.post(
         "/contracts",
         json={
-            "customer_name": "John Doe",
-            "customer_email": "john@example.com",
-            "doc_version": "1.0",
+            "start_date": "2024-01-01",
+            "end_date": "2024-12-31",
+            "location_lat": 51.5,
+            "location_lon": 4.3,
+            "nab": 123456,
+            "technology": "solar",
+            "nominal_capacity": 100.5,
+            "indexation": "day_ahead",
+            "quantity_type": "pay_as_produced",
+            "solar_direction": 180,
+            "solar_inclination": 35,
         },
     )
     assert response.status_code == 201
     data = response.json()
-    assert data["customer_name"] == "John Doe"
-    assert data["customer_email"] == "john@example.com"
-    assert data["status"] == "draft"
-    assert data["doc_version"] == "1.0"
+    assert data["technology"] == "solar"
+    assert data["nominal_capacity"] == 100.5
+    assert data["solar_direction"] == 180
+    assert data["solar_inclination"] == 35
+    assert data["wind_turbine_height"] is None
     assert "id" in data
     assert "created_at" in data
     assert "updated_at" in data
 
 
-def test_create_contract_invalid_email():
-    """Test creating a contract with invalid email."""
+def test_create_wind_contract():
+    """Test creating a new wind contract."""
     response = client.post(
         "/contracts",
         json={
-            "customer_name": "John Doe",
-            "customer_email": "invalid-email",
+            "start_date": "2024-01-01",
+            "end_date": "2024-12-31",
+            "location_lat": 52.0,
+            "location_lon": 5.0,
+            "nab": 789012,
+            "technology": "wind",
+            "nominal_capacity": 250.0,
+            "indexation": "month_ahead",
+            "quantity_type": "pay_as_forecasted",
+            "wind_turbine_height": 120.5,
+        },
+    )
+    assert response.status_code == 201
+    data = response.json()
+    assert data["technology"] == "wind"
+    assert data["wind_turbine_height"] == 120.5
+    assert data["solar_direction"] is None
+    assert data["solar_inclination"] is None
+
+
+def test_create_contract_invalid_latitude():
+    """Test creating a contract with invalid latitude."""
+    response = client.post(
+        "/contracts",
+        json={
+            "start_date": "2024-01-01",
+            "end_date": "2024-12-31",
+            "location_lat": 100.0,  # Invalid: > 90
+            "location_lon": 4.3,
+            "nab": 123456,
+            "technology": "solar",
+            "nominal_capacity": 100.5,
+            "indexation": "day_ahead",
+            "quantity_type": "pay_as_produced",
+        },
+    )
+    assert response.status_code == 422
+
+
+def test_create_contract_invalid_capacity():
+    """Test creating a contract with invalid capacity."""
+    response = client.post(
+        "/contracts",
+        json={
+            "start_date": "2024-01-01",
+            "end_date": "2024-12-31",
+            "location_lat": 51.5,
+            "location_lon": 4.3,
+            "nab": 123456,
+            "technology": "solar",
+            "nominal_capacity": -10.0,  # Invalid: negative
+            "indexation": "day_ahead",
+            "quantity_type": "pay_as_produced",
+        },
+    )
+    assert response.status_code == 422
+
+
+def test_create_contract_invalid_dates():
+    """Test creating a contract with end_date before start_date."""
+    response = client.post(
+        "/contracts",
+        json={
+            "start_date": "2024-12-31",
+            "end_date": "2024-01-01",  # Before start_date
+            "location_lat": 51.5,
+            "location_lon": 4.3,
+            "nab": 123456,
+            "technology": "solar",
+            "nominal_capacity": 100.5,
+            "indexation": "day_ahead",
+            "quantity_type": "pay_as_produced",
         },
     )
     assert response.status_code == 422
@@ -44,8 +125,15 @@ def test_get_contract():
     create_response = client.post(
         "/contracts",
         json={
-            "customer_name": "Jane Doe",
-            "customer_email": "jane@example.com",
+            "start_date": "2024-01-01",
+            "end_date": "2024-12-31",
+            "location_lat": 51.5,
+            "location_lon": 4.3,
+            "nab": 123456,
+            "technology": "solar",
+            "nominal_capacity": 100.5,
+            "indexation": "day_ahead",
+            "quantity_type": "pay_as_produced",
         },
     )
     contract_id = create_response.json()["id"]
@@ -55,13 +143,13 @@ def test_get_contract():
     assert response.status_code == 200
     data = response.json()
     assert data["id"] == contract_id
-    assert data["customer_name"] == "Jane Doe"
-    assert data["customer_email"] == "jane@example.com"
+    assert data["technology"] == "solar"
 
 
 def test_get_contract_not_found():
     """Test getting a non-existent contract."""
-    response = client.get("/contracts/999999")
+    random_uuid = str(uuid.uuid4())
+    response = client.get(f"/contracts/{random_uuid}")
     assert response.status_code == 404
     assert response.json()["detail"] == "Contract not found"
 
@@ -72,15 +160,29 @@ def test_list_contracts():
     client.post(
         "/contracts",
         json={
-            "customer_name": "Alice",
-            "customer_email": "alice@example.com",
+            "start_date": "2024-01-01",
+            "end_date": "2024-12-31",
+            "location_lat": 51.5,
+            "location_lon": 4.3,
+            "nab": 111111,
+            "technology": "solar",
+            "nominal_capacity": 100.5,
+            "indexation": "day_ahead",
+            "quantity_type": "pay_as_produced",
         },
     )
     client.post(
         "/contracts",
         json={
-            "customer_name": "Bob",
-            "customer_email": "bob@example.com",
+            "start_date": "2024-01-01",
+            "end_date": "2024-12-31",
+            "location_lat": 52.0,
+            "location_lon": 5.0,
+            "nab": 222222,
+            "technology": "wind",
+            "nominal_capacity": 250.0,
+            "indexation": "month_ahead",
+            "quantity_type": "pay_as_forecasted",
         },
     )
 
@@ -94,13 +196,20 @@ def test_list_contracts():
 
 def test_list_contracts_pagination():
     """Test pagination for contracts list."""
-    # Create multiple contracts
+    # Use small increments to ensure all contracts have valid lat/lon within acceptable ranges
     for i in range(5):
         client.post(
             "/contracts",
             json={
-                "customer_name": f"User {i}",
-                "customer_email": f"user{i}@example.com",
+                "start_date": "2024-01-01",
+                "end_date": "2024-12-31",
+                "location_lat": 51.0 + i * 0.01,  # 51.00 to 51.04, within valid range
+                "location_lon": 4.0 + i * 0.01,  # 4.00 to 4.04, within valid range
+                "nab": 100000 + i,
+                "technology": "solar",
+                "nominal_capacity": 100.0 + i * 10,  # Increment capacity by 10 kW per contract
+                "indexation": "day_ahead",
+                "quantity_type": "pay_as_produced",
             },
         )
 
@@ -115,3 +224,102 @@ def test_list_contracts_pagination():
     assert response.status_code == 200
     data = response.json()
     assert isinstance(data, list)
+
+
+def test_create_contract_solar_field_on_wind():
+    """Test that solar fields cannot be provided for wind technology."""
+    response = client.post(
+        "/contracts",
+        json={
+            "start_date": "2024-01-01",
+            "end_date": "2024-12-31",
+            "location_lat": 51.5,
+            "location_lon": 4.3,
+            "nab": 123456,
+            "technology": "wind",
+            "nominal_capacity": 100.5,
+            "indexation": "day_ahead",
+            "quantity_type": "pay_as_produced",
+            "solar_direction": 180,  # Invalid for wind
+        },
+    )
+    assert response.status_code == 422
+
+
+def test_create_contract_wind_field_on_solar():
+    """Test that wind fields cannot be provided for solar technology."""
+    response = client.post(
+        "/contracts",
+        json={
+            "start_date": "2024-01-01",
+            "end_date": "2024-12-31",
+            "location_lat": 51.5,
+            "location_lon": 4.3,
+            "nab": 123456,
+            "technology": "solar",
+            "nominal_capacity": 100.5,
+            "indexation": "day_ahead",
+            "quantity_type": "pay_as_produced",
+            "wind_turbine_height": 120.5,  # Invalid for solar
+        },
+    )
+    assert response.status_code == 422
+
+
+def test_create_contract_equal_dates():
+    """Test that start_date and end_date cannot be equal."""
+    response = client.post(
+        "/contracts",
+        json={
+            "start_date": "2024-01-01",
+            "end_date": "2024-01-01",  # Same as start_date
+            "location_lat": 51.5,
+            "location_lon": 4.3,
+            "nab": 123456,
+            "technology": "solar",
+            "nominal_capacity": 100.5,
+            "indexation": "day_ahead",
+            "quantity_type": "pay_as_produced",
+        },
+    )
+    assert response.status_code == 422
+
+
+def test_create_contract_invalid_solar_direction():
+    """Test that solar direction must be between 0 and 359 degrees."""
+    response = client.post(
+        "/contracts",
+        json={
+            "start_date": "2024-01-01",
+            "end_date": "2024-12-31",
+            "location_lat": 51.5,
+            "location_lon": 4.3,
+            "nab": 123456,
+            "technology": "solar",
+            "nominal_capacity": 100.5,
+            "indexation": "day_ahead",
+            "quantity_type": "pay_as_produced",
+            "solar_direction": 360,  # Invalid: >= 360
+        },
+    )
+    assert response.status_code == 422
+
+
+def test_create_contract_invalid_solar_inclination():
+    """Test that solar inclination must be between 0 and 90 degrees."""
+    response = client.post(
+        "/contracts",
+        json={
+            "start_date": "2024-01-01",
+            "end_date": "2024-12-31",
+            "location_lat": 51.5,
+            "location_lon": 4.3,
+            "nab": 123456,
+            "technology": "solar",
+            "nominal_capacity": 100.5,
+            "indexation": "day_ahead",
+            "quantity_type": "pay_as_produced",
+            "solar_inclination": 100,  # Invalid: > 90
+        },
+    )
+    assert response.status_code == 422
