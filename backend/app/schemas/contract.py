@@ -5,6 +5,7 @@ from typing import Optional
 from pydantic import BaseModel, ConfigDict, field_validator
 
 from app.domain.enums import Indexation, QuantityType, Technology
+from app.schemas.counterparty import CounterpartyRead
 
 
 class ContractCreate(BaseModel):
@@ -19,6 +20,7 @@ class ContractCreate(BaseModel):
     nominal_capacity: float  # unit = kW
     indexation: Indexation
     quantity_type: QuantityType
+    counterparty_id: int
 
     # Technology-specific fields (nullable)
     solar_direction: Optional[int] = None
@@ -110,5 +112,7 @@ class ContractResponse(BaseModel):
     solar_direction: Optional[int]
     solar_inclination: Optional[int]
     wind_turbine_height: Optional[float]
+    counterparty_id: Optional[int]
+    counterparty: Optional[CounterpartyRead]
     created_at: datetime
     updated_at: datetime
