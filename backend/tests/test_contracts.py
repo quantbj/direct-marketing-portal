@@ -196,15 +196,15 @@ def test_list_contracts():
 
 def test_list_contracts_pagination():
     """Test pagination for contracts list."""
-    # Create multiple contracts with small increments to stay within valid coordinate ranges
     for i in range(5):
+        # Create multiple contracts with tiny increments to stay within valid coordinate ranges
         client.post(
             "/contracts",
             json={
                 "start_date": "2024-01-01",
                 "end_date": "2024-12-31",
-                "location_lat": 51.0 + i * 0.1,  # 51.0 to 51.4, within valid range
-                "location_lon": 4.0 + i * 0.1,  # 4.0 to 4.4, within valid range
+                "location_lat": 51.0 + i * 0.01,  # 51.00 to 51.04, within valid range
+                "location_lon": 4.0 + i * 0.01,  # 4.00 to 4.04, within valid range
                 "nab": 100000 + i,
                 "technology": "solar",
                 "nominal_capacity": 100.0 + i * 10,  # Increment capacity by 10 kW per contract
@@ -286,7 +286,7 @@ def test_create_contract_equal_dates():
 
 
 def test_create_contract_invalid_solar_direction():
-    """Test that solar direction must be between 0 and 360 degrees."""
+    """Test that solar direction must be between 0 and 359 degrees."""
     response = client.post(
         "/contracts",
         json={
@@ -299,7 +299,7 @@ def test_create_contract_invalid_solar_direction():
             "nominal_capacity": 100.5,
             "indexation": "day_ahead",
             "quantity_type": "pay_as_produced",
-            "solar_direction": 400,  # Invalid: > 360
+            "solar_direction": 360,  # Invalid: >= 360
         },
     )
     assert response.status_code == 422

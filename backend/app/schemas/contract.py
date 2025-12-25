@@ -65,8 +65,8 @@ class ContractCreate(BaseModel):
             technology = info.data.get("technology")
             if technology != Technology.SOLAR:
                 raise ValueError("Solar fields should only be provided for solar technology")
-            if not 0 <= v <= 360:
-                raise ValueError("Solar direction must be between 0 and 360 degrees")
+            if not 0 <= v < 360:
+                raise ValueError("Solar direction must be between 0 and 359 degrees")
         return v
 
     @field_validator("solar_inclination")
@@ -83,8 +83,8 @@ class ContractCreate(BaseModel):
 
     @field_validator("wind_turbine_height")
     @classmethod
-    def validate_wind_fields(cls, v: Optional[float], info) -> Optional[float]:
-        """Validate wind fields are only provided for wind technology."""
+    def validate_wind_turbine_height(cls, v: Optional[float], info) -> Optional[float]:
+        """Validate wind turbine height field."""
         if v is not None:
             technology = info.data.get("technology")
             if technology != Technology.WIND:
