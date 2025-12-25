@@ -5,8 +5,10 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.api.routes.counterparties import router as counterparties_router
+from app.api.routes.offers import router as offers_router
 from app.db.models.contract import Contract
 from app.db.models.counterparty import Counterparty
+from app.db.models.offer import Offer
 from app.db.session import engine
 from app.schemas.contract import ContractCreate, ContractResponse
 
@@ -14,6 +16,7 @@ app = FastAPI(title="Direct Marketing Contracts API")
 
 # Include routers
 app.include_router(counterparties_router)
+app.include_router(offers_router)
 
 
 @app.get("/health")
@@ -40,6 +43,13 @@ def create_contract(contract_data: ContractCreate):
         if not counterparty:
             raise HTTPException(status_code=404, detail="Counterparty not found")
 
+        # Verify offer exists and is active
+        offer = session.get(Offer, contract_data.offer_id)
+        if not offer:
+            raise HTTPException(status_code=422, detail="Offer not found")
+        if not offer.is_active:
+            raise HTTPException(status_code=422, detail="Offer is not active")
+
         contract = Contract(
             start_date=contract_data.start_date,
             end_date=contract_data.end_date,
@@ -51,6 +61,7 @@ def create_contract(contract_data: ContractCreate):
             indexation=contract_data.indexation.value,
             quantity_type=contract_data.quantity_type.value,
             counterparty_id=contract_data.counterparty_id,
+            offer_id=contract_data.offer_id,
             solar_direction=contract_data.solar_direction,
             solar_inclination=contract_data.solar_inclination,
             wind_turbine_height=contract_data.wind_turbine_height,
