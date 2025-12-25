@@ -171,6 +171,10 @@ def test_create_contract_with_counterparty_success():
     )
     counterparty_id = counterparty_response.json()["id"]
 
+    # Get a valid offer
+    offers_response = client.get("/offers")
+    offer_id = offers_response.json()[0]["id"]
+
     # Create a contract with the counterparty
     response = client.post(
         "/contracts",
@@ -185,6 +189,7 @@ def test_create_contract_with_counterparty_success():
             "indexation": "day_ahead",
             "quantity_type": "pay_as_produced",
             "counterparty_id": counterparty_id,
+            "offer_id": offer_id,
         },
     )
     assert response.status_code == 201
@@ -195,6 +200,10 @@ def test_create_contract_with_counterparty_success():
 
 def test_create_contract_with_invalid_counterparty_id():
     """Test that creating a contract with non-existent counterparty fails."""
+    # Get a valid offer
+    offers_response = client.get("/offers")
+    offer_id = offers_response.json()[0]["id"]
+
     response = client.post(
         "/contracts",
         json={
@@ -208,6 +217,7 @@ def test_create_contract_with_invalid_counterparty_id():
             "indexation": "day_ahead",
             "quantity_type": "pay_as_produced",
             "counterparty_id": 999999,
+            "offer_id": offer_id,
         },
     )
     assert response.status_code == 404

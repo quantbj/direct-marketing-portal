@@ -24,9 +24,18 @@ def create_test_counterparty():
     return response.json()["id"]
 
 
+def get_test_offer_id():
+    """Helper function to get a valid offer ID."""
+    response = client.get("/offers")
+    offers = response.json()
+    return offers[0]["id"] if offers else None
+
+
 def test_create_solar_contract():
     """Test creating a new solar contract."""
     counterparty_id = create_test_counterparty()
+    offer_id = get_test_offer_id()
+    offer_id = get_test_offer_id()
     response = client.post(
         "/contracts",
         json={
@@ -40,6 +49,7 @@ def test_create_solar_contract():
             "indexation": "day_ahead",
             "quantity_type": "pay_as_produced",
             "counterparty_id": counterparty_id,
+            "offer_id": offer_id,
             "solar_direction": 180,
             "solar_inclination": 35,
         },
@@ -52,6 +62,7 @@ def test_create_solar_contract():
     assert data["solar_inclination"] == 35
     assert data["wind_turbine_height"] is None
     assert data["counterparty_id"] == counterparty_id
+    assert data["offer_id"] == offer_id
     assert "id" in data
     assert "created_at" in data
     assert "updated_at" in data
@@ -60,6 +71,8 @@ def test_create_solar_contract():
 def test_create_wind_contract():
     """Test creating a new wind contract."""
     counterparty_id = create_test_counterparty()
+    offer_id = get_test_offer_id()
+    offer_id = get_test_offer_id()
     response = client.post(
         "/contracts",
         json={
@@ -73,6 +86,7 @@ def test_create_wind_contract():
             "indexation": "month_ahead",
             "quantity_type": "pay_as_forecasted",
             "counterparty_id": counterparty_id,
+            "offer_id": offer_id,
             "wind_turbine_height": 120.5,
         },
     )
@@ -87,6 +101,7 @@ def test_create_wind_contract():
 def test_create_contract_invalid_latitude():
     """Test creating a contract with invalid latitude."""
     counterparty_id = create_test_counterparty()
+    offer_id = get_test_offer_id()
     response = client.post(
         "/contracts",
         json={
@@ -100,6 +115,7 @@ def test_create_contract_invalid_latitude():
             "indexation": "day_ahead",
             "quantity_type": "pay_as_produced",
             "counterparty_id": counterparty_id,
+            "offer_id": offer_id,
         },
     )
     assert response.status_code == 422
@@ -108,6 +124,7 @@ def test_create_contract_invalid_latitude():
 def test_create_contract_invalid_capacity():
     """Test creating a contract with invalid capacity."""
     counterparty_id = create_test_counterparty()
+    offer_id = get_test_offer_id()
     response = client.post(
         "/contracts",
         json={
@@ -121,6 +138,7 @@ def test_create_contract_invalid_capacity():
             "indexation": "day_ahead",
             "quantity_type": "pay_as_produced",
             "counterparty_id": counterparty_id,
+            "offer_id": offer_id,
         },
     )
     assert response.status_code == 422
@@ -129,6 +147,7 @@ def test_create_contract_invalid_capacity():
 def test_create_contract_invalid_dates():
     """Test creating a contract with end_date before start_date."""
     counterparty_id = create_test_counterparty()
+    offer_id = get_test_offer_id()
     response = client.post(
         "/contracts",
         json={
@@ -142,6 +161,7 @@ def test_create_contract_invalid_dates():
             "indexation": "day_ahead",
             "quantity_type": "pay_as_produced",
             "counterparty_id": counterparty_id,
+            "offer_id": offer_id,
         },
     )
     assert response.status_code == 422
@@ -151,6 +171,7 @@ def test_get_contract():
     """Test getting a contract by ID."""
     # Create a contract first
     counterparty_id = create_test_counterparty()
+    offer_id = get_test_offer_id()
     create_response = client.post(
         "/contracts",
         json={
@@ -164,6 +185,7 @@ def test_get_contract():
             "indexation": "day_ahead",
             "quantity_type": "pay_as_produced",
             "counterparty_id": counterparty_id,
+            "offer_id": offer_id,
         },
     )
     contract_id = create_response.json()["id"]
@@ -188,6 +210,7 @@ def test_list_contracts():
     """Test listing all contracts."""
     # Create some contracts
     counterparty_id = create_test_counterparty()
+    offer_id = get_test_offer_id()
     client.post(
         "/contracts",
         json={
@@ -201,6 +224,7 @@ def test_list_contracts():
             "indexation": "day_ahead",
             "quantity_type": "pay_as_produced",
             "counterparty_id": counterparty_id,
+            "offer_id": offer_id,
         },
     )
     client.post(
@@ -216,6 +240,7 @@ def test_list_contracts():
             "indexation": "month_ahead",
             "quantity_type": "pay_as_forecasted",
             "counterparty_id": counterparty_id,
+            "offer_id": offer_id,
         },
     )
 
@@ -230,6 +255,7 @@ def test_list_contracts():
 def test_list_contracts_pagination():
     """Test pagination for contracts list."""
     counterparty_id = create_test_counterparty()
+    offer_id = get_test_offer_id()
     # Use small increments to ensure all contracts have valid lat/lon within acceptable ranges
     for i in range(5):
         client.post(
@@ -245,6 +271,7 @@ def test_list_contracts_pagination():
                 "indexation": "day_ahead",
                 "quantity_type": "pay_as_produced",
                 "counterparty_id": counterparty_id,
+                "offer_id": offer_id,
             },
         )
 
@@ -264,6 +291,7 @@ def test_list_contracts_pagination():
 def test_create_contract_solar_field_on_wind():
     """Test that solar fields cannot be provided for wind technology."""
     counterparty_id = create_test_counterparty()
+    offer_id = get_test_offer_id()
     response = client.post(
         "/contracts",
         json={
@@ -277,6 +305,7 @@ def test_create_contract_solar_field_on_wind():
             "indexation": "day_ahead",
             "quantity_type": "pay_as_produced",
             "counterparty_id": counterparty_id,
+            "offer_id": offer_id,
             "solar_direction": 180,  # Invalid for wind
         },
     )
@@ -286,6 +315,7 @@ def test_create_contract_solar_field_on_wind():
 def test_create_contract_wind_field_on_solar():
     """Test that wind fields cannot be provided for solar technology."""
     counterparty_id = create_test_counterparty()
+    offer_id = get_test_offer_id()
     response = client.post(
         "/contracts",
         json={
@@ -299,6 +329,7 @@ def test_create_contract_wind_field_on_solar():
             "indexation": "day_ahead",
             "quantity_type": "pay_as_produced",
             "counterparty_id": counterparty_id,
+            "offer_id": offer_id,
             "wind_turbine_height": 120.5,  # Invalid for solar
         },
     )
@@ -308,6 +339,7 @@ def test_create_contract_wind_field_on_solar():
 def test_create_contract_equal_dates():
     """Test that start_date and end_date cannot be equal."""
     counterparty_id = create_test_counterparty()
+    offer_id = get_test_offer_id()
     response = client.post(
         "/contracts",
         json={
@@ -321,6 +353,7 @@ def test_create_contract_equal_dates():
             "indexation": "day_ahead",
             "quantity_type": "pay_as_produced",
             "counterparty_id": counterparty_id,
+            "offer_id": offer_id,
         },
     )
     assert response.status_code == 422
@@ -329,6 +362,7 @@ def test_create_contract_equal_dates():
 def test_create_contract_invalid_solar_direction():
     """Test that solar direction must be between 0 and 359 degrees."""
     counterparty_id = create_test_counterparty()
+    offer_id = get_test_offer_id()
     response = client.post(
         "/contracts",
         json={
@@ -342,6 +376,7 @@ def test_create_contract_invalid_solar_direction():
             "indexation": "day_ahead",
             "quantity_type": "pay_as_produced",
             "counterparty_id": counterparty_id,
+            "offer_id": offer_id,
             "solar_direction": 360,  # Invalid: >= 360
         },
     )
@@ -351,6 +386,8 @@ def test_create_contract_invalid_solar_direction():
 def test_create_contract_invalid_solar_inclination():
     """Test that solar inclination must be between 0 and 90 degrees."""
     counterparty_id = create_test_counterparty()
+    offer_id = get_test_offer_id()
+    offer_id = get_test_offer_id()
     response = client.post(
         "/contracts",
         json={
@@ -364,7 +401,82 @@ def test_create_contract_invalid_solar_inclination():
             "indexation": "day_ahead",
             "quantity_type": "pay_as_produced",
             "counterparty_id": counterparty_id,
+            "offer_id": offer_id,
             "solar_inclination": 100,  # Invalid: > 90
         },
     )
     assert response.status_code == 422
+
+
+def test_create_contract_requires_offer_id():
+    """Test that creating a contract requires offer_id."""
+    counterparty_id = create_test_counterparty()
+    response = client.post(
+        "/contracts",
+        json={
+            "start_date": "2024-01-01",
+            "end_date": "2024-12-31",
+            "location_lat": 51.5,
+            "location_lon": 4.3,
+            "nab": 123456,
+            "technology": "solar",
+            "nominal_capacity": 100.5,
+            "indexation": "day_ahead",
+            "quantity_type": "pay_as_produced",
+            "counterparty_id": counterparty_id,
+            # Missing offer_id
+        },
+    )
+    assert response.status_code == 422
+
+
+def test_create_contract_rejects_missing_offer():
+    """Test that creating a contract with non-existent offer fails."""
+    counterparty_id = create_test_counterparty()
+    response = client.post(
+        "/contracts",
+        json={
+            "start_date": "2024-01-01",
+            "end_date": "2024-12-31",
+            "location_lat": 51.5,
+            "location_lon": 4.3,
+            "nab": 123456,
+            "technology": "solar",
+            "nominal_capacity": 100.5,
+            "indexation": "day_ahead",
+            "quantity_type": "pay_as_produced",
+            "counterparty_id": counterparty_id,
+            "offer_id": 999999,  # Non-existent offer
+        },
+    )
+    assert response.status_code == 422
+    assert "Offer not found" in response.json()["detail"]
+
+
+def test_create_contract_with_valid_offer_success():
+    """Test creating a contract with a valid active offer."""
+    counterparty_id = create_test_counterparty()
+    offer_id = get_test_offer_id()
+    offer_id = get_test_offer_id()
+    response = client.post(
+        "/contracts",
+        json={
+            "start_date": "2024-01-01",
+            "end_date": "2024-12-31",
+            "location_lat": 51.5,
+            "location_lon": 4.3,
+            "nab": 123456,
+            "technology": "solar",
+            "nominal_capacity": 100.5,
+            "indexation": "day_ahead",
+            "quantity_type": "pay_as_produced",
+            "counterparty_id": counterparty_id,
+            "offer_id": offer_id,
+            "solar_direction": 180,
+            "solar_inclination": 35,
+        },
+    )
+    assert response.status_code == 201
+    data = response.json()
+    assert data["offer_id"] == offer_id
+    assert data["counterparty_id"] == counterparty_id

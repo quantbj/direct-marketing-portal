@@ -20,6 +20,7 @@ class ContractCreate(BaseModel):
     indexation: Indexation
     quantity_type: QuantityType
     counterparty_id: int
+    offer_id: int
 
     # Technology-specific fields (nullable)
     solar_direction: Optional[int] = None
@@ -109,6 +110,7 @@ class ContractResponse(BaseModel):
     indexation: str
     quantity_type: str
     counterparty_id: Optional[int]
+    offer_id: Optional[int]
     solar_direction: Optional[int]
     solar_inclination: Optional[int]
     wind_turbine_height: Optional[float]

@@ -10,6 +10,7 @@ from app.db.base import Base
 
 if TYPE_CHECKING:
     from app.db.models.counterparty import Counterparty
+    from app.db.models.offer import Offer
 
 
 class Contract(Base):
@@ -42,6 +43,9 @@ class Contract(Base):
         ForeignKey("counterparties.id"), nullable=True
     )
 
+    # Offer relationship
+    offer_id: Mapped[Optional[int]] = mapped_column(ForeignKey("offers.id"), nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(
         server_default=func.timezone("UTC", func.now()), nullable=False
     )
@@ -51,8 +55,9 @@ class Contract(Base):
         nullable=False,
     )
 
-    # Relationship
+    # Relationships
     counterparty: Mapped[Optional["Counterparty"]] = relationship(back_populates="contracts")
+    offer: Mapped[Optional["Offer"]] = relationship()
 
     __table_args__ = (
         CheckConstraint("location_lat >= -90 AND location_lat <= 90", name="valid_latitude"),
