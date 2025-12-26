@@ -26,6 +26,8 @@ jobs:
           --health-retries 5
     env:
       DATABASE_URL: postgresql+psycopg://app:app@localhost:5432/app
+      ESIGN_WEBHOOK_SECRET: test-webhook-secret-for-ci-only
+      STORAGE_ROOT: /tmp/ci-storage
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
