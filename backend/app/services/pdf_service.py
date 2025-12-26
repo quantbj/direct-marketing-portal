@@ -136,3 +136,103 @@ def get_pdf_absolute_path(relative_path: str) -> Path:
         raise ValueError("PDF path is outside storage directory")
 
     return pdf_path
+
+
+def generate_signed_pdf(
+    contract_id: uuid.UUID,
+    counterparty_name: str,
+    counterparty_address: str,
+    counterparty_email: str,
+    offer_name: str,
+    offer_price_cents: int,
+    offer_currency: str,
+    offer_billing_period: str,
+    signed_at: datetime,
+) -> str:
+    """
+    Generate a signed PDF placeholder for a contract.
+
+    Args:
+        contract_id: UUID of the contract
+        counterparty_name: Name of the counterparty
+        counterparty_address: Full address of the counterparty
+        counterparty_email: Email of the counterparty
+        offer_name: Name of the offer/plan
+        offer_price_cents: Price in cents
+        offer_currency: Currency code (e.g., EUR)
+        offer_billing_period: Billing period (e.g., monthly)
+        signed_at: Timestamp when contract was signed
+
+    Returns:
+        str: Relative path to the generated signed PDF
+    """
+    # Ensure storage root exists and is absolute
+    storage_root = Path(settings.STORAGE_ROOT).resolve()
+
+    # Create storage directory for this contract
+    contract_storage_dir = storage_root / "contracts" / str(contract_id)
+    contract_storage_dir.mkdir(parents=True, exist_ok=True)
+
+    # Define PDF file path
+    pdf_filename = "signed.pdf"
+    pdf_path = contract_storage_dir / pdf_filename
+
+    # Create PDF document
+    doc = SimpleDocTemplate(str(pdf_path), pagesize=A4)
+    styles = getSampleStyleSheet()
+    story = []
+
+    # Title with SIGNED watermark
+    title = Paragraph("<b>CONTRACT - SIGNED (placeholder)</b>", styles["Title"])
+    story.append(title)
+    story.append(Spacer(1, 1 * cm))
+
+    # Contract information
+    contract_info = f"""
+    <b>Contract ID:</b> {contract_id}<br/>
+    <b>Signed At:</b> {signed_at.strftime("%Y-%m-%d %H:%M:%S UTC")}<br/>
+    """
+    story.append(Paragraph(contract_info, styles["Normal"]))
+    story.append(Spacer(1, 0.5 * cm))
+
+    # Counterparty information (escape user input to prevent XSS)
+    counterparty_section = f"""
+    <b>Counterparty Information</b><br/>
+    Name: {html.escape(counterparty_name)}<br/>
+    Address: {html.escape(counterparty_address)}<br/>
+    Email: {html.escape(counterparty_email)}<br/>
+    """
+    story.append(Paragraph(counterparty_section, styles["Normal"]))
+    story.append(Spacer(1, 0.5 * cm))
+
+    # Offer information (escape user input)
+    price_display = f"{offer_price_cents / 100:.2f} {html.escape(offer_currency)}"
+    offer_section = f"""
+    <b>Offer Details</b><br/>
+    Plan: {html.escape(offer_name)}<br/>
+    Price: {price_display}<br/>
+    Billing Period: {html.escape(offer_billing_period)}<br/>
+    """
+    story.append(Paragraph(offer_section, styles["Normal"]))
+    story.append(Spacer(1, 1 * cm))
+
+    # Signed notice
+    notice = Paragraph(
+        "<b><i>This is a SIGNED placeholder contract. "
+        "Final contract templates and real e-signature integration "
+        "will be implemented in a future release.</i></b>",
+        styles["Italic"],
+    )
+    story.append(notice)
+
+    # Build PDF
+    doc.build(story)
+
+    # Return relative path from storage root using Path.relative_to()
+    # This ensures the path is within storage_root
+    try:
+        relative_path = pdf_path.relative_to(storage_root)
+        return str(relative_path)
+    except ValueError:
+        # Path is outside storage_root - this should never happen in normal operation
+        raise ValueError("Generated PDF path is outside storage root")
