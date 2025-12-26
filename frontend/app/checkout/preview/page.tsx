@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Stepper from "@/src/components/Stepper";
-import { createContractDraft, getDraftPdfUrl } from "@/src/lib/api";
+import { createContractDraft, getDraftPdfUrl, getContract } from "@/src/lib/api";
 import { saveCheckoutState, getCheckoutState } from "@/src/lib/checkout-state";
 import type { Contract } from "@/src/lib/types";
 
@@ -23,19 +23,17 @@ export default function PreviewContractPage() {
         return;
       }
 
-      // If we already have a contract, load it
+      // If we already have a contract, fetch its full details
       if (state.contractId) {
-        setContract({
-          id: state.contractId,
-          status: "draft",
-          counterparty_id: state.counterpartyId,
-          offer_id: state.offerId,
-          draft_pdf_available: true,
-          created_at: "",
-          updated_at: "",
-        } as Contract);
-        setLoading(false);
-        return;
+        try {
+          const existingContract = await getContract(state.contractId);
+          setContract(existingContract);
+          setLoading(false);
+          return;
+        } catch (err: unknown) {
+          // If fetch fails, create a new draft below
+          console.error("Failed to fetch existing contract:", err);
+        }
       }
 
       // Create contract draft
