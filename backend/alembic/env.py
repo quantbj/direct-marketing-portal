@@ -11,6 +11,7 @@ from app.db.models.app_meta import AppMeta  # noqa: F401
 from app.db.models.contract import Contract  # noqa: F401
 from app.db.models.counterparty import Counterparty  # noqa: F401
 from app.db.models.offer import Offer  # noqa: F401
+from app.db.models.signature_envelope import SignatureEnvelope  # noqa: F401
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -69,8 +70,16 @@ def run_migrations_online() -> None:
     and associate a connection with the context.
 
     """
+    configuration = config.get_section(config.config_ini_section, {})
+    # Ensure sqlalchemy.url is set from environment or default
+    if "sqlalchemy.url" not in configuration:
+        database_url = os.environ.get(
+            "DATABASE_URL", "postgresql+psycopg://app:app@localhost:5432/app"
+        )
+        configuration["sqlalchemy.url"] = database_url
+
     connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
+        configuration,
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
