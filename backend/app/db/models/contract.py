@@ -19,17 +19,17 @@ class Contract(Base):
     __tablename__ = "contracts"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    start_date: Mapped[date] = mapped_column(Date, nullable=False)
-    end_date: Mapped[date] = mapped_column(Date, nullable=False)
-    location_lat: Mapped[float] = mapped_column(Float, nullable=False)
-    location_lon: Mapped[float] = mapped_column(Float, nullable=False)
-    nab: Mapped[int] = mapped_column(nullable=False)
-    technology: Mapped[str] = mapped_column(String, nullable=False)
-    nominal_capacity: Mapped[float] = mapped_column(
-        Numeric(precision=10, scale=2), nullable=False
+    start_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    end_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    location_lat: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    location_lon: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    nab: Mapped[Optional[int]] = mapped_column(nullable=True)
+    technology: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    nominal_capacity: Mapped[Optional[float]] = mapped_column(
+        Numeric(precision=10, scale=2), nullable=True
     )  # unit = kW
-    indexation: Mapped[str] = mapped_column(String, nullable=False)
-    quantity_type: Mapped[str] = mapped_column(String, nullable=False)
+    indexation: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    quantity_type: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
     # Technology-specific fields (nullable)
     solar_direction: Mapped[Optional[int]] = mapped_column(nullable=True)
@@ -45,6 +45,10 @@ class Contract(Base):
 
     # Offer relationship
     offer_id: Mapped[Optional[int]] = mapped_column(ForeignKey("offers.id"), nullable=True)
+
+    # Contract status and PDF tracking
+    status: Mapped[str] = mapped_column(String, nullable=False, server_default="draft")
+    draft_pdf_path: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         server_default=func.timezone("UTC", func.now()), nullable=False
