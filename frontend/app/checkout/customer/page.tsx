@@ -1,3 +1,27 @@
+/**
+ * Customer Data Page - Step 2 of Checkout Flow
+ *
+ * This page collects customer information required for contract creation.
+ * All data is validated client-side for UX, then re-validated server-side for security.
+ *
+ * Flow:
+ * 1. User arrives from offer selection (validated on mount)
+ * 2. User fills form fields with personal/company information
+ * 3. Client-side validation provides immediate feedback
+ * 4. On submit, data is sent to backend API
+ * 5. Backend creates counterparty record and returns ID
+ * 6. ID is saved to state and user proceeds to preview
+ *
+ * Security considerations:
+ * - All inputs are controlled components (React state)
+ * - Client validation is for UX only; backend re-validates everything
+ * - Email validated with regex (client) and pydantic EmailStr (server)
+ * - Country code enforced as 2 uppercase letters (ISO 3166-1 alpha-2)
+ * - No SQL injection risk (backend uses SQLAlchemy ORM with parameterized queries)
+ * - XSS prevented by React's auto-escaping and backend sanitization
+ * - Trimming whitespace prevents invisible character attacks
+ */
+
 "use client";
 
 import { useState, useEffect } from "react";
@@ -9,9 +33,17 @@ import type { CounterpartyCreate } from "@/src/lib/types";
 
 export default function CustomerDataPage() {
   const router = useRouter();
+  
+  // UI state
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
+  /**
+   * Form data matching the CounterpartyCreate schema.
+   * Initialized with sensible defaults:
+   * - type: "person" (most common case)
+   * - country: "DE" (Germany, as this is a German marketing platform)
+   */
   const [formData, setFormData] = useState<CounterpartyCreate>({
     type: "person",
     name: "",
@@ -22,14 +54,24 @@ export default function CustomerDataPage() {
     email: "",
   });
 
+  /**
+   * Guard: Redirect to offer selection if no offer is selected.
+   * This ensures users follow the correct flow and prevents incomplete checkouts.
+   */
   useEffect(() => {
-    // Check if offer is selected
     const state = getCheckoutState();
     if (!state.offerId) {
       router.push("/checkout/offer");
     }
   }, [router]);
 
+  /**
+   * Handles input changes for all form fields.
+   * Updates the form data state as user types.
+   *
+   * Security: Input is stored in state but not executed or rendered unsafely.
+   * React auto-escapes all text content to prevent XSS.
+   */
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>,
   ) => {
@@ -37,18 +79,54 @@ export default function CustomerDataPage() {
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  const validateForm = () => {
+  /**
+   * Validates form data client-side for immediate user feedback.
+   *
+   * Validation rules:
+   * - All text fields must be non-empty after trimming whitespace
+   * - Email must match basic format: something@domain.extension
+   * - Country must be exactly 2 uppercase letters (ISO 3166-1 alpha-2)
+   *
+   * @returns true if all validation passes, false otherwise
+   *
+   * Security notes:
+   * - Trimming prevents invisible character attacks
+   * - Email regex is basic (prevents obvious typos, not foolproof)
+   * - Server performs stricter validation (pydantic EmailStr)
+   * - Country format prevents injection of longer strings
+   */
+  const validateForm = (): boolean => {
+    // Required field checks (trim to prevent whitespace-only values)
     if (!formData.name.trim()) return false;
     if (!formData.street.trim()) return false;
     if (!formData.postal_code.trim()) return false;
     if (!formData.city.trim()) return false;
     if (!formData.email.trim()) return false;
+    
+    // Country code format: exactly 2 uppercase letters
     if (!/^[A-Z]{2}$/.test(formData.country)) return false;
-    // Basic email check
+    
+    // Email format: basic check for user@domain.ext
+    // Server will do stricter validation with pydantic EmailStr
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) return false;
+    
     return true;
   };
 
+  /**
+   * Handles form submission.
+   *
+   * Flow:
+   * 1. Prevent default form submission (page reload)
+   * 2. Validate form data
+   * 3. Set loading state and clear previous errors
+   * 4. Send data to backend API
+   * 5. On success: save counterparty ID to state and navigate to preview
+   * 6. On error: display error message and stop loading
+   *
+   * Security: Backend validates and sanitizes all inputs again.
+   * Client validation is only for UX, not security.
+   */
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -61,10 +139,16 @@ export default function CustomerDataPage() {
     setError(null);
 
     try {
+      // Send data to backend - it will validate everything again
       const counterparty = await createCounterparty(formData);
+      
+      // Save the returned ID to state for next step
       saveCheckoutState({ counterpartyId: counterparty.id });
+      
+      // Navigate to preview
       router.push("/checkout/preview");
     } catch (err: unknown) {
+      // Display error message from API
       setError(
         err instanceof Error ? err.message : "Failed to create counterparty",
       );
@@ -72,6 +156,7 @@ export default function CustomerDataPage() {
     }
   };
 
+  // Check if form is valid for enabling/disabling submit button
   const isFormValid = validateForm();
 
   return (

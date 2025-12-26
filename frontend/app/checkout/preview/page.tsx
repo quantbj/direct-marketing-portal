@@ -1,3 +1,27 @@
+/**
+ * Contract Preview Page - Step 3 of Checkout Flow
+ *
+ * This page displays the contract details and draft PDF for user review.
+ * It creates a contract draft (or retrieves an existing one) and shows:
+ * - Selected offer summary
+ * - Customer information summary
+ * - Embedded PDF preview of the contract
+ *
+ * Flow:
+ * 1. User arrives from customer data page
+ * 2. Check if contract already exists in state (from page refresh)
+ * 3. If not, create new contract draft via API
+ * 4. Display contract summary and PDF
+ * 5. User clicks "Start Signing" to proceed to e-signature
+ *
+ * Security considerations:
+ * - Guard ensures user has completed previous steps (offer + customer)
+ * - Contract ID is stored client-side but validated server-side
+ * - PDF is served directly from backend (not stored in browser)
+ * - iframe sandbox could be added for extra PDF security (current: none)
+ * - All data displayed is from backend (trusted source)
+ */
+
 "use client";
 
 import { useState, useEffect } from "react";
@@ -9,21 +33,41 @@ import type { Contract } from "@/src/lib/types";
 
 export default function PreviewContractPage() {
   const router = useRouter();
+  
+  // State management
   const [contract, setContract] = useState<Contract | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  /**
+   * Initialize or retrieve contract on component mount.
+   *
+   * This effect handles two scenarios:
+   * 1. First visit: Creates a new contract draft
+   * 2. Returning visit (page refresh): Fetches existing contract
+   *
+   * The contract creation associates the selected offer with the customer
+   * and generates a PDF document for preview.
+   */
   useEffect(() => {
     const initializeContract = async () => {
       const state = getCheckoutState();
 
-      // Validate prerequisites
+      /**
+       * Guard: Ensure user has completed previous steps.
+       * If offer or customer is missing, redirect to start of flow.
+       * This prevents incomplete checkouts and API errors.
+       */
       if (!state.offerId || !state.counterpartyId) {
         router.push("/checkout/offer");
         return;
       }
 
-      // If we already have a contract, fetch its full details
+      /**
+       * If we already have a contract ID (from previous visit or page refresh),
+       * fetch the full contract details instead of creating a new one.
+       * This ensures idempotency and prevents duplicate contracts.
+       */
       if (state.contractId) {
         try {
           const existingContract = await getContract(state.contractId);
@@ -31,18 +75,27 @@ export default function PreviewContractPage() {
           setLoading(false);
           return;
         } catch (err: unknown) {
-          // If fetch fails, create a new draft below
+          // If fetch fails (contract deleted, network error, etc.),
+          // fall through to create a new draft
           console.error("Failed to fetch existing contract:", err);
         }
       }
 
-      // Create contract draft
+      /**
+       * Create a new contract draft.
+       * This calls the backend to:
+       * 1. Validate offer and customer exist
+       * 2. Create contract record with status='draft'
+       * 3. Generate PDF with contract details
+       * 4. Return contract with embedded offer/customer data
+       */
       try {
         const newContract = await createContractDraft(
           state.counterpartyId,
           state.offerId,
         );
         setContract(newContract);
+        // Save contract ID for page refresh resilience
         saveCheckoutState({ contractId: newContract.id });
         setLoading(false);
       } catch (err: unknown) {
@@ -56,12 +109,20 @@ export default function PreviewContractPage() {
     initializeContract();
   }, [router]);
 
+  /**
+   * Navigates to the signing page.
+   * Only enabled when contract is loaded.
+   */
   const handleStartSigning = () => {
     if (contract) {
       router.push("/checkout/sign");
     }
   };
 
+  /**
+   * Formats price in cents to currency string.
+   * Same implementation as offer page for consistency.
+   */
   const formatPrice = (cents: number, currency: string) => {
     return new Intl.NumberFormat("en-US", {
       style: "currency",
@@ -69,6 +130,7 @@ export default function PreviewContractPage() {
     }).format(cents / 100);
   };
 
+  // Loading state: Show while creating/fetching contract
   if (loading) {
     return (
       <div>
@@ -80,6 +142,7 @@ export default function PreviewContractPage() {
     );
   }
 
+  // Error state: Show if contract creation failed
   if (error) {
     return (
       <div>
@@ -99,10 +162,12 @@ export default function PreviewContractPage() {
     );
   }
 
+  // Guard: Should not happen, but handle null contract
   if (!contract) {
     return null;
   }
 
+  // Main render: Display contract preview
   return (
     <div>
       <Stepper currentStep={3} />
@@ -110,7 +175,7 @@ export default function PreviewContractPage() {
       <div className="bg-white rounded-lg shadow-sm p-6">
         <h1 className="text-2xl font-bold mb-6">Preview Contract</h1>
 
-        {/* Offer Summary */}
+        {/* Offer Summary Section */}
         {contract.offer && (
           <div className="mb-6 p-4 bg-gray-50 rounded-lg">
             <h2 className="font-semibold text-lg mb-2">Offer</h2>
@@ -130,7 +195,7 @@ export default function PreviewContractPage() {
           </div>
         )}
 
-        {/* Counterparty Summary */}
+        {/* Customer Summary Section */}
         {contract.counterparty && (
           <div className="mb-6 p-4 bg-gray-50 rounded-lg">
             <h2 className="font-semibold text-lg mb-2">Customer</h2>
@@ -146,10 +211,18 @@ export default function PreviewContractPage() {
           </div>
         )}
 
-        {/* PDF Preview */}
+        {/* PDF Preview Section */}
         <div className="mb-6">
           <h2 className="font-semibold text-lg mb-3">Contract Document</h2>
           <div className="border border-gray-300 rounded-lg overflow-hidden">
+            {/*
+              Security note: iframe loads PDF from backend server.
+              - PDF is dynamically generated per contract
+              - Backend validates contract exists before serving
+              - Consider adding sandbox attribute for extra security:
+                sandbox="allow-same-origin"
+              - Current implementation trusts backend PDF generation
+            */}
             <iframe
               src={getDraftPdfUrl(contract.id)}
               className="w-full h-[600px]"
@@ -158,6 +231,7 @@ export default function PreviewContractPage() {
           </div>
         </div>
 
+        {/* Action buttons */}
         <div className="flex justify-between">
           <button
             onClick={() => router.push("/checkout/customer")}
