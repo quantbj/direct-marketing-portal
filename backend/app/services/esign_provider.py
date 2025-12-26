@@ -114,6 +114,10 @@ class StubESignProvider:
 
         provided_signature = signature_header[7:]  # Remove 'sha256=' prefix
 
+        # Validate webhook secret is configured
+        if not settings.ESIGN_WEBHOOK_SECRET:
+            raise ValueError("ESIGN_WEBHOOK_SECRET is not configured")
+
         # Calculate expected signature
         secret = settings.ESIGN_WEBHOOK_SECRET.encode("utf-8")
         expected_signature = hmac.new(secret, body, "sha256").hexdigest()

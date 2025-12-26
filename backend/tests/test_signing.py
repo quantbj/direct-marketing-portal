@@ -118,13 +118,8 @@ def test_webhook_signed_transitions_contract_and_creates_signed_pdf():
     # Prepare webhook payload
     payload = {"envelope_id": envelope_id, "event": "signed"}
 
-    # Calculate signature
+    # Calculate signature using configured secret
     secret = settings.ESIGN_WEBHOOK_SECRET
-    if not secret:
-        # Set a test secret if not configured
-        settings.ESIGN_WEBHOOK_SECRET = "test-secret-key"
-        secret = "test-secret-key"
-
     signature = calculate_webhook_signature(payload, secret)
 
     # Send webhook
@@ -187,11 +182,8 @@ def test_webhook_accepts_valid_signature():
     # Prepare webhook payload
     payload = {"envelope_id": envelope_id, "event": "signed"}
 
-    # Calculate correct signature
-    secret = settings.ESIGN_WEBHOOK_SECRET or "test-secret-key"
-    if not settings.ESIGN_WEBHOOK_SECRET:
-        settings.ESIGN_WEBHOOK_SECRET = secret
-
+    # Calculate correct signature using configured secret
+    secret = settings.ESIGN_WEBHOOK_SECRET
     signature = calculate_webhook_signature(payload, secret)
 
     # Send webhook with valid signature
@@ -229,9 +221,7 @@ def test_download_signed_pdf_returns_pdf_after_signing():
 
     # Send signed webhook
     payload = {"envelope_id": envelope_id, "event": "signed"}
-    secret = settings.ESIGN_WEBHOOK_SECRET or "test-secret-key"
-    if not settings.ESIGN_WEBHOOK_SECRET:
-        settings.ESIGN_WEBHOOK_SECRET = secret
+    secret = settings.ESIGN_WEBHOOK_SECRET
     signature = calculate_webhook_signature(payload, secret)
 
     client.post(
@@ -258,9 +248,7 @@ def test_webhook_idempotent_for_repeated_signed_events():
 
     # Send signed webhook twice
     payload = {"envelope_id": envelope_id, "event": "signed"}
-    secret = settings.ESIGN_WEBHOOK_SECRET or "test-secret-key"
-    if not settings.ESIGN_WEBHOOK_SECRET:
-        settings.ESIGN_WEBHOOK_SECRET = secret
+    secret = settings.ESIGN_WEBHOOK_SECRET
     signature = calculate_webhook_signature(payload, secret)
 
     # First webhook

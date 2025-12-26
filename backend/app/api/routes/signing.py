@@ -119,13 +119,10 @@ async def esign_webhook(provider: str, request: Request):
         envelope.status = event_type
         envelope.last_webhook_at = datetime.now(timezone.utc)
 
-        # Store evidence (append to list or replace)
+        # Store evidence (append to list)
         if envelope.evidence_json is None:
             envelope.evidence_json = []
-        if isinstance(envelope.evidence_json, list):
-            envelope.evidence_json.append(payload)
-        else:
-            envelope.evidence_json = [payload]
+        envelope.evidence_json.append(payload)
 
         # Handle signed event
         if event_type == "signed":
