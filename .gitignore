@@ -15,6 +15,7 @@ build/
 
 # Storage
 backend/storage/
+backend/backend/storage/
 
 # Next.js
 frontend/.next/
