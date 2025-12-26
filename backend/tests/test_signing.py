@@ -17,7 +17,7 @@ client = TestClient(app)
 def validate_test_configuration():
     """Validate required environment configuration for signing tests."""
     errors = []
-    
+
     # Validate ESIGN_WEBHOOK_SECRET
     if not settings.ESIGN_WEBHOOK_SECRET:
         errors.append(
@@ -29,7 +29,7 @@ def validate_test_configuration():
             f"ESIGN_WEBHOOK_SECRET is too short ({len(settings.ESIGN_WEBHOOK_SECRET)} chars). "
             "Use at least 16 characters for security."
         )
-    
+
     # Validate STORAGE_ROOT
     storage_path = Path(settings.STORAGE_ROOT)
     if not storage_path.exists():
@@ -40,7 +40,7 @@ def validate_test_configuration():
                 f"STORAGE_ROOT directory '{settings.STORAGE_ROOT}' does not exist "
                 f"and could not be created: {e}"
             )
-    
+
     # Check if STORAGE_ROOT is writable
     if storage_path.exists():
         test_file = storage_path / ".write_test"
@@ -48,10 +48,8 @@ def validate_test_configuration():
             test_file.write_text("test")
             test_file.unlink()
         except Exception as e:
-            errors.append(
-                f"STORAGE_ROOT directory '{settings.STORAGE_ROOT}' is not writable: {e}"
-            )
-    
+            errors.append(f"STORAGE_ROOT directory '{settings.STORAGE_ROOT}' is not writable: {e}")
+
     if errors:
         error_msg = "Configuration validation failed:\n" + "\n".join(f"  - {e}" for e in errors)
         raise RuntimeError(error_msg)
