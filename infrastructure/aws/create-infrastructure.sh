@@ -2,6 +2,9 @@
 
 # AWS Infrastructure Creation Script for Direct Marketing Portal
 # This script creates all required AWS resources for the staging environment
+#
+# IMPORTANT: For production environments, consider using AWS Secrets Manager
+# or Parameter Store for sensitive credentials instead of environment variables.
 
 set -e  # Exit on error
 
