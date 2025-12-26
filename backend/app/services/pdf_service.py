@@ -1,5 +1,6 @@
 """PDF generation service for contract drafts."""
 
+import html
 import os
 import uuid
 from datetime import datetime, timezone
@@ -65,23 +66,23 @@ def generate_draft_pdf(
     story.append(Paragraph(contract_info, styles["Normal"]))
     story.append(Spacer(1, 0.5 * cm))
 
-    # Counterparty information
+    # Counterparty information (escape user input to prevent XSS)
     counterparty_section = f"""
     <b>Counterparty Information</b><br/>
-    Name: {counterparty_name}<br/>
-    Address: {counterparty_address}<br/>
-    Email: {counterparty_email}<br/>
+    Name: {html.escape(counterparty_name)}<br/>
+    Address: {html.escape(counterparty_address)}<br/>
+    Email: {html.escape(counterparty_email)}<br/>
     """
     story.append(Paragraph(counterparty_section, styles["Normal"]))
     story.append(Spacer(1, 0.5 * cm))
 
-    # Offer information
-    price_display = f"{offer_price_cents / 100:.2f} {offer_currency}"
+    # Offer information (escape user input)
+    price_display = f"{offer_price_cents / 100:.2f} {html.escape(offer_currency)}"
     offer_section = f"""
     <b>Offer Details</b><br/>
-    Plan: {offer_name}<br/>
+    Plan: {html.escape(offer_name)}<br/>
     Price: {price_display}<br/>
-    Billing Period: {offer_billing_period}<br/>
+    Billing Period: {html.escape(offer_billing_period)}<br/>
     """
     story.append(Paragraph(offer_section, styles["Normal"]))
     story.append(Spacer(1, 1 * cm))
