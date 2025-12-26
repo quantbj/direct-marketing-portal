@@ -10,6 +10,7 @@ from app.db.base import Base
 from app.db.models.app_meta import AppMeta  # noqa: F401
 from app.db.models.contract import Contract  # noqa: F401
 from app.db.models.counterparty import Counterparty  # noqa: F401
+from app.db.models.offer import Offer  # noqa: F401
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

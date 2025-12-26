@@ -7,6 +7,13 @@ from pydantic import BaseModel, ConfigDict, field_validator
 from app.domain.enums import Indexation, QuantityType, Technology
 
 
+class ContractDraftCreate(BaseModel):
+    """Schema for creating a contract draft."""
+
+    counterparty_id: int
+    offer_id: int
+
+
 class ContractCreate(BaseModel):
     """Schema for creating a contract."""
 
@@ -94,25 +101,72 @@ class ContractCreate(BaseModel):
         return v
 
 
+class CounterpartySummary(BaseModel):
+    """Summary of counterparty information."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    email: str
+    street: str
+    postal_code: str
+    city: str
+    country: str
+
+
+class OfferSummary(BaseModel):
+    """Summary of offer information."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    code: str
+    name: str
+    price_cents: int
+    currency: str
+    billing_period: str
+
+
+class ContractOut(BaseModel):
+    """Schema for contract output with embedded counterparty and offer."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    status: str
+    counterparty_id: Optional[int]
+    offer_id: Optional[int]
+    draft_pdf_available: bool
+    counterparty: Optional[CounterpartySummary] = None
+    offer: Optional[OfferSummary] = None
+    created_at: datetime
+    updated_at: datetime
+
+
 class ContractResponse(BaseModel):
     """Schema for contract response."""
 
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
-    start_date: date
-    end_date: date
-    location_lat: float
-    location_lon: float
-    nab: int
-    technology: str
-    nominal_capacity: float
-    indexation: str
-    quantity_type: str
+    start_date: Optional[date]
+    end_date: Optional[date]
+    location_lat: Optional[float]
+    location_lon: Optional[float]
+    nab: Optional[int]
+    technology: Optional[str]
+    nominal_capacity: Optional[float]
+    indexation: Optional[str]
+    quantity_type: Optional[str]
     counterparty_id: Optional[int]
     offer_id: Optional[int]
     solar_direction: Optional[int]
     solar_inclination: Optional[int]
     wind_turbine_height: Optional[float]
+    status: str
+    draft_pdf_path: Optional[str]
     created_at: datetime
     updated_at: datetime
+    counterparty: Optional[CounterpartySummary] = None
+    offer: Optional[OfferSummary] = None

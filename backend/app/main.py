@@ -2,8 +2,9 @@ import uuid
 
 from fastapi import FastAPI, HTTPException
 from sqlalchemy import text
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
+from app.api.routes.contracts import router as contracts_router
 from app.api.routes.counterparties import router as counterparties_router
 from app.api.routes.offers import router as offers_router
 from app.db.models.contract import Contract
@@ -17,6 +18,7 @@ app = FastAPI(title="Direct Marketing Contracts API")
 # Include routers
 app.include_router(counterparties_router)
 app.include_router(offers_router)
+app.include_router(contracts_router)
 
 
 @app.get("/health")
@@ -69,14 +71,28 @@ def create_contract(contract_data: ContractCreate):
         session.add(contract)
         session.commit()
         session.refresh(contract)
+
+        # Reload with relationships
+        contract = (
+            session.query(Contract)
+            .options(joinedload(Contract.counterparty), joinedload(Contract.offer))
+            .filter(Contract.id == contract.id)
+            .first()
+        )
         return contract
 
 
 @app.get("/contracts/{contract_id}", response_model=ContractResponse)
 def get_contract(contract_id: uuid.UUID):
-    """Get a contract by ID."""
+    """Get a contract by ID with embedded counterparty and offer information."""
     with Session(engine) as session:
-        contract = session.get(Contract, contract_id)
+        # Use joinedload to eagerly load relationships
+        contract = (
+            session.query(Contract)
+            .options(joinedload(Contract.counterparty), joinedload(Contract.offer))
+            .filter(Contract.id == contract_id)
+            .first()
+        )
         if not contract:
             raise HTTPException(status_code=404, detail="Contract not found")
         return contract
@@ -86,5 +102,11 @@ def get_contract(contract_id: uuid.UUID):
 def list_contracts(skip: int = 0, limit: int = 100):
     """List contracts with pagination."""
     with Session(engine) as session:
-        contracts = session.query(Contract).offset(skip).limit(limit).all()
+        contracts = (
+            session.query(Contract)
+            .options(joinedload(Contract.counterparty), joinedload(Contract.offer))
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
         return contracts
