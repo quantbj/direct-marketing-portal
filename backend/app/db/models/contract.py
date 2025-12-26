@@ -47,7 +47,9 @@ class Contract(Base):
     offer_id: Mapped[Optional[int]] = mapped_column(ForeignKey("offers.id"), nullable=True)
 
     # Contract status and PDF tracking
-    status: Mapped[str] = mapped_column(String, nullable=False, server_default="draft")
+    status: Mapped[str] = mapped_column(
+        String, nullable=False, server_default="draft"
+    )  # Valid values: 'draft', 'active', 'completed', 'cancelled'
     draft_pdf_path: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(

@@ -1,7 +1,6 @@
 """PDF generation service for contract drafts."""
 
 import html
-import os
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -40,8 +39,11 @@ def generate_draft_pdf(
     Returns:
         str: Relative path to the generated PDF
     """
+    # Ensure storage root exists and is absolute
+    storage_root = Path(settings.STORAGE_ROOT).resolve()
+
     # Create storage directory for this contract
-    contract_storage_dir = Path(settings.STORAGE_ROOT) / "contracts" / str(contract_id)
+    contract_storage_dir = storage_root / "contracts" / str(contract_id)
     contract_storage_dir.mkdir(parents=True, exist_ok=True)
 
     # Define PDF file path
@@ -98,19 +100,39 @@ def generate_draft_pdf(
     # Build PDF
     doc.build(story)
 
-    # Return relative path from storage root
-    relative_path = os.path.relpath(pdf_path, settings.STORAGE_ROOT)
-    return relative_path
+    # Return relative path from storage root using Path.relative_to()
+    # This ensures the path is within storage_root
+    try:
+        relative_path = pdf_path.relative_to(storage_root)
+        return str(relative_path)
+    except ValueError:
+        # Path is outside storage_root - this should never happen in normal operation
+        raise ValueError("Generated PDF path is outside storage root")
 
 
 def get_pdf_absolute_path(relative_path: str) -> Path:
     """
     Get the absolute path to a PDF file from its relative storage path.
 
+    This function validates that the resulting path is within the storage
+    directory to prevent path traversal attacks.
+
     Args:
         relative_path: Relative path from storage root
 
     Returns:
         Path: Absolute path to the PDF file
+
+    Raises:
+        ValueError: If the resolved path is outside the storage directory
     """
-    return Path(settings.STORAGE_ROOT) / relative_path
+    storage_root = Path(settings.STORAGE_ROOT).resolve()
+    pdf_path = (storage_root / relative_path).resolve()
+
+    # Ensure the resolved path is within storage_root
+    try:
+        pdf_path.relative_to(storage_root)
+    except ValueError:
+        raise ValueError("PDF path is outside storage directory")
+
+    return pdf_path

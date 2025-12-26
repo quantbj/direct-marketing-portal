@@ -2,7 +2,7 @@ import uuid
 
 from fastapi import FastAPI, HTTPException
 from sqlalchemy import text
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.api.routes.contracts import router as contracts_router
 from app.api.routes.counterparties import router as counterparties_router
@@ -40,8 +40,6 @@ def health_db():
 def create_contract(contract_data: ContractCreate):
     """Create a new contract."""
     with Session(engine) as session:
-        from sqlalchemy.orm import joinedload
-
         # Verify counterparty exists
         counterparty = session.get(Counterparty, contract_data.counterparty_id)
         if not counterparty:
@@ -88,8 +86,6 @@ def create_contract(contract_data: ContractCreate):
 def get_contract(contract_id: uuid.UUID):
     """Get a contract by ID with embedded counterparty and offer information."""
     with Session(engine) as session:
-        from sqlalchemy.orm import joinedload
-
         # Use joinedload to eagerly load relationships
         contract = (
             session.query(Contract)
@@ -106,8 +102,6 @@ def get_contract(contract_id: uuid.UUID):
 def list_contracts(skip: int = 0, limit: int = 100):
     """List contracts with pagination."""
     with Session(engine) as session:
-        from sqlalchemy.orm import joinedload
-
         contracts = (
             session.query(Contract)
             .options(joinedload(Contract.counterparty), joinedload(Contract.offer))
