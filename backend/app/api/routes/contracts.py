@@ -105,3 +105,31 @@ def download_draft_pdf(contract_id: uuid.UUID):
             media_type="application/pdf",
             filename=f"contract_{contract_id}_draft.pdf",
         )
+
+
+@router.get("/contracts/{contract_id}/signed-pdf")
+def download_signed_pdf(contract_id: uuid.UUID):
+    """
+    Download the signed PDF for a contract.
+
+    Returns the PDF file if it exists, otherwise returns 404.
+    """
+    with Session(engine) as session:
+        contract = session.get(Contract, contract_id)
+
+        if not contract:
+            raise HTTPException(status_code=404, detail="Contract not found")
+
+        if not contract.signed_pdf_path:
+            raise HTTPException(status_code=404, detail="Signed PDF not found")
+
+        # Get absolute path and verify file exists
+        pdf_path = get_pdf_absolute_path(contract.signed_pdf_path)
+        if not pdf_path.exists():
+            raise HTTPException(status_code=404, detail="Signed PDF file not found on disk")
+
+        return FileResponse(
+            path=str(pdf_path),
+            media_type="application/pdf",
+            filename=f"contract_{contract_id}_signed.pdf",
+        )

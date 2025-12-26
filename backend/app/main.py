@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.api.routes.contracts import router as contracts_router
 from app.api.routes.counterparties import router as counterparties_router
 from app.api.routes.offers import router as offers_router
+from app.api.routes.signing import router as signing_router
 from app.db.models.contract import Contract
 from app.db.models.counterparty import Counterparty
 from app.db.models.offer import Offer
@@ -19,6 +20,7 @@ app = FastAPI(title="Direct Marketing Contracts API")
 app.include_router(counterparties_router)
 app.include_router(offers_router)
 app.include_router(contracts_router)
+app.include_router(signing_router)
 
 
 @app.get("/health")

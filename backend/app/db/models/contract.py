@@ -11,6 +11,7 @@ from app.db.base import Base
 if TYPE_CHECKING:
     from app.db.models.counterparty import Counterparty
     from app.db.models.offer import Offer
+    from app.db.models.signature_envelope import SignatureEnvelope
 
 
 class Contract(Base):
@@ -49,8 +50,10 @@ class Contract(Base):
     # Contract status and PDF tracking
     status: Mapped[str] = mapped_column(
         String, nullable=False, server_default="draft"
-    )  # Valid values: 'draft', 'active', 'completed', 'cancelled'
+    )  # Valid values: 'draft', 'awaiting_signature', 'signed', 'active', 'completed', 'cancelled'
     draft_pdf_path: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    signed_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
+    signed_pdf_path: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         server_default=func.timezone("UTC", func.now()), nullable=False
@@ -64,6 +67,7 @@ class Contract(Base):
     # Relationships
     counterparty: Mapped[Optional["Counterparty"]] = relationship(back_populates="contracts")
     offer: Mapped[Optional["Offer"]] = relationship()
+    signature_envelopes: Mapped[list["SignatureEnvelope"]] = relationship(back_populates="contract")
 
     __table_args__ = (
         CheckConstraint("location_lat >= -90 AND location_lat <= 90", name="valid_latitude"),
