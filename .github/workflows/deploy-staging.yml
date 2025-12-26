@@ -4,9 +4,14 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      aws_region:
+        description: 'AWS Region'
+        required: false
+        default: 'us-east-1'
 
 env:
-  AWS_REGION: us-east-1
+  AWS_REGION: ${{ github.event.inputs.aws_region || 'us-east-1' }}
 
 jobs:
   deploy:

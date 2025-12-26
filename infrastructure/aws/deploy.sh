@@ -2,12 +2,17 @@
 
 # AWS Docker Build and Push Script for Direct Marketing Portal
 # This script builds and pushes Docker images to Amazon ECR
+# Usage: ./deploy.sh [region] [tag] [auto-deploy]
+#   region: AWS region (default: us-east-1)
+#   tag: Image tag (default: latest)
+#   auto-deploy: Auto-trigger App Runner deployments (default: false, set to 'true' to skip prompt)
 
 set -e  # Exit on error
 
 # Default values
 AWS_REGION="${1:-us-east-1}"
 TAG="${2:-latest}"
+AUTO_DEPLOY="${3:-false}"
 
 # Derived resource names
 PROJECT_NAME="direct-marketing"
@@ -135,10 +140,12 @@ build_and_push_frontend() {
 # Function to trigger App Runner deployments
 trigger_deployments() {
     echo ""
-    read -p "Do you want to trigger App Runner deployments? (yes/no): " -r
-    if [[ ! $REPLY =~ ^[Yy][Ee][Ss]$ ]]; then
-        echo "Skipping deployment trigger"
-        return
+    if [ "${AUTO_DEPLOY}" != "true" ]; then
+        read -p "Do you want to trigger App Runner deployments? (yes/no): " -r
+        if [[ ! $REPLY =~ ^[Yy][Ee][Ss]$ ]]; then
+            echo "Skipping deployment trigger"
+            return
+        fi
     fi
     
     echo "Triggering App Runner deployments..."

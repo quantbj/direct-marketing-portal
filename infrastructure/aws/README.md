@@ -85,16 +85,21 @@ This script will:
 After infrastructure is created, build and push images:
 
 ```bash
-./deploy.sh [region] [tag]
+./deploy.sh [region] [tag] [auto-deploy]
 ```
 
 Parameters (all optional):
 - `region`: AWS region (default: `us-east-1`)
 - `tag`: Image tag (default: `latest`)
+- `auto-deploy`: Set to `true` to automatically trigger deployments without prompt (default: `false`)
 
-Example:
+Examples:
 ```bash
+# Interactive mode (will prompt for deployment)
 ./deploy.sh us-east-1 latest
+
+# Auto-deploy mode (for CI/CD)
+./deploy.sh us-east-1 latest true
 ```
 
 The script will:
@@ -276,6 +281,8 @@ The script will prompt for confirmation before deleting.
    - Only backend service can connect via security groups
 
 2. **Secrets Management**:
+   - **IMPORTANT**: For production environments, use AWS Secrets Manager or Parameter Store instead of environment variables for database passwords
+   - The current implementation uses environment variables for simplicity in staging
    - Store database password securely (e.g., AWS Secrets Manager)
    - Rotate credentials regularly
    - Never commit secrets to source control
