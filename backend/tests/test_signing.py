@@ -13,6 +13,54 @@ from app.main import app
 client = TestClient(app)
 
 
+# Pre-test configuration validation
+def validate_test_configuration():
+    """Validate required environment configuration for signing tests."""
+    errors = []
+    
+    # Validate ESIGN_WEBHOOK_SECRET
+    if not settings.ESIGN_WEBHOOK_SECRET:
+        errors.append(
+            "ESIGN_WEBHOOK_SECRET is not configured. "
+            "Set environment variable: ESIGN_WEBHOOK_SECRET=<your-secret>"
+        )
+    elif len(settings.ESIGN_WEBHOOK_SECRET) < 16:
+        errors.append(
+            f"ESIGN_WEBHOOK_SECRET is too short ({len(settings.ESIGN_WEBHOOK_SECRET)} chars). "
+            "Use at least 16 characters for security."
+        )
+    
+    # Validate STORAGE_ROOT
+    storage_path = Path(settings.STORAGE_ROOT)
+    if not storage_path.exists():
+        try:
+            storage_path.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            errors.append(
+                f"STORAGE_ROOT directory '{settings.STORAGE_ROOT}' does not exist "
+                f"and could not be created: {e}"
+            )
+    
+    # Check if STORAGE_ROOT is writable
+    if storage_path.exists():
+        test_file = storage_path / ".write_test"
+        try:
+            test_file.write_text("test")
+            test_file.unlink()
+        except Exception as e:
+            errors.append(
+                f"STORAGE_ROOT directory '{settings.STORAGE_ROOT}' is not writable: {e}"
+            )
+    
+    if errors:
+        error_msg = "Configuration validation failed:\n" + "\n".join(f"  - {e}" for e in errors)
+        raise RuntimeError(error_msg)
+
+
+# Run validation when module is imported
+validate_test_configuration()
+
+
 def create_test_counterparty():
     """Helper function to create a test counterparty."""
     response = client.post(
@@ -130,7 +178,12 @@ def test_webhook_signed_transitions_contract_and_creates_signed_pdf():
     )
 
     # Assert webhook response
-    assert response.status_code == 200
+    assert response.status_code == 200, (
+        f"Webhook failed with status {response.status_code}. "
+        f"Response: {response.text}. "
+        f"Secret used: {'<empty>' if not secret else f'{len(secret)} chars'}. "
+        f"Signature: {signature}"
+    )
     assert response.json() == {"ok": True}
 
     # Verify contract was updated
@@ -141,8 +194,12 @@ def test_webhook_signed_transitions_contract_and_creates_signed_pdf():
 
     # Verify signed PDF exists
     pdf_path = Path(settings.STORAGE_ROOT) / "contracts" / contract_id / "signed.pdf"
-    assert pdf_path.exists()
-    assert pdf_path.stat().st_size > 0
+    assert pdf_path.exists(), (
+        f"Signed PDF not found at {pdf_path}. "
+        f"STORAGE_ROOT: {settings.STORAGE_ROOT}. "
+        f"Directory exists: {pdf_path.parent.exists()}"
+    )
+    assert pdf_path.stat().st_size > 0, f"Signed PDF at {pdf_path} is empty"
 
 
 def test_webhook_rejects_invalid_signature():
@@ -194,7 +251,12 @@ def test_webhook_accepts_valid_signature():
     )
 
     # Assert acceptance
-    assert response.status_code == 200
+    assert response.status_code == 200, (
+        f"Webhook failed with status {response.status_code}. "
+        f"Response: {response.text}. "
+        f"Secret configured: {'Yes' if settings.ESIGN_WEBHOOK_SECRET else 'No'}. "
+        f"Signature: {signature}"
+    )
 
 
 def test_download_signed_pdf_404_when_not_signed():
@@ -224,15 +286,21 @@ def test_download_signed_pdf_returns_pdf_after_signing():
     secret = settings.ESIGN_WEBHOOK_SECRET
     signature = calculate_webhook_signature(payload, secret)
 
-    client.post(
+    webhook_response = client.post(
         "/webhooks/esign/stub",
         json=payload,
         headers={"X-ESign-Signature": signature},
     )
+    assert webhook_response.status_code == 200, (
+        f"Webhook failed: {webhook_response.status_code} - {webhook_response.text}"
+    )
 
     # Download signed PDF
     response = client.get(f"/contracts/{contract_id}/signed-pdf")
-    assert response.status_code == 200
+    assert response.status_code == 200, (
+        f"Failed to download signed PDF: {response.status_code} - {response.text}. "
+        f"STORAGE_ROOT: {settings.STORAGE_ROOT}"
+    )
     assert response.headers["content-type"] == "application/pdf"
     assert len(response.content) > 0
 
@@ -257,7 +325,9 @@ def test_webhook_idempotent_for_repeated_signed_events():
         json=payload,
         headers={"X-ESign-Signature": signature},
     )
-    assert response1.status_code == 200
+    assert response1.status_code == 200, (
+        f"First webhook failed: {response1.status_code} - {response1.text}"
+    )
 
     # Second webhook (should still succeed)
     response2 = client.post(
@@ -265,7 +335,9 @@ def test_webhook_idempotent_for_repeated_signed_events():
         json=payload,
         headers={"X-ESign-Signature": signature},
     )
-    assert response2.status_code == 200
+    assert response2.status_code == 200, (
+        f"Second webhook failed (idempotency issue): {response2.status_code} - {response2.text}"
+    )
 
     # Verify contract is still signed
     contract_response = client.get(f"/contracts/{contract_id}")
