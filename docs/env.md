@@ -8,4 +8,4 @@
 - `ESIGN_SKIP_WEBHOOK_SIGNATURE=false` - Set to "true" to skip webhook signature verification (only for testing)
 
 ## Frontend
-- (none yet)
+- `NEXT_PUBLIC_API_BASE_URL=http://localhost:8000` - Backend API base URL (default: http://localhost:8000)
