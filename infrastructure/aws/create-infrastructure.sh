@@ -5,13 +5,19 @@
 #
 # IMPORTANT: For production environments, consider using AWS Secrets Manager
 # or Parameter Store for sensitive credentials instead of environment variables.
+#
+# Usage: ./create-infrastructure.sh [environment] [region] [db-password]
+#   environment: Environment name (default: staging)
+#   region: AWS region (default: eu-central-1)
+#   db-password: Database password (auto-generated if not provided)
 
 set -e  # Exit on error
 
 # Default values
 ENV_NAME="${1:-staging}"
 AWS_REGION="${2:-eu-central-1}"
-DB_PASSWORD="${3:-$(openssl rand -base64 32)}"
+# Generate URL-safe password (no special characters that break URLs or JSON)
+DB_PASSWORD="${3:-$(openssl rand -base64 32 | tr -dc 'a-zA-Z0-9' | head -c 32)}"
 
 # Derived resource names
 PROJECT_NAME="direct-marketing"
@@ -45,7 +51,8 @@ check_aws_credentials() {
         echo "Error: AWS credentials are not configured properly."
         exit 1
     fi
-    echo "✓ AWS credentials are configured"
+    ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+    echo "✓ AWS credentials are configured (Account: ${ACCOUNT_ID})"
 }
 
 # Function to wait for App Runner service to be running
@@ -66,8 +73,9 @@ wait_for_apprunner_service() {
         if [ "${STATUS}" = "RUNNING" ]; then
             echo "  ✓ ${service_name} is now running"
             return 0
-        elif [ "${STATUS}" = "CREATE_FAILED" ] || [ "${STATUS}" = "DELETE_FAILED" ]; then
+        elif [ "${STATUS}" = "CREATE_FAILED" ] || [ "${STATUS}" = "DELETE_FAILED" ] || [ "${STATUS}" = "DELETED" ]; then
             echo "  ✗ ${service_name} failed with status: ${STATUS}"
+            echo "  Check the AWS Console for more details about the failure."
             return 1
         fi
         
@@ -78,6 +86,15 @@ wait_for_apprunner_service() {
     
     echo "  ✗ Timeout waiting for ${service_name}"
     return 1
+}
+
+# Function to get App Runner service ARN by name
+get_apprunner_service_arn() {
+    local service_name=$1
+    aws apprunner list-services \
+        --region "${AWS_REGION}" \
+        --query "ServiceSummaryList[?ServiceName=='${service_name}'].ServiceArn" \
+        --output text 2>/dev/null || echo ""
 }
 
 # Function to create ECR repositories
@@ -124,7 +141,7 @@ create_vpc() {
         --query 'Vpcs[0].VpcId' \
         --output text 2>/dev/null || echo "None")
     
-    if [ "${VPC_ID}" != "None" ] && [ "${VPC_ID}" != "" ]; then
+    if [ "${VPC_ID}" != "None" ] && [ -n "${VPC_ID}" ]; then
         echo "  VPC already exists: ${VPC_ID}"
     else
         # Create VPC
@@ -141,11 +158,19 @@ create_vpc() {
         
         echo "  ✓ Created VPC: ${VPC_ID}"
         
-        # Enable DNS hostnames
+        # Enable DNS support (required for RDS)
+        aws ec2 modify-vpc-attribute \
+            --vpc-id "${VPC_ID}" \
+            --enable-dns-support \
+            --region "${AWS_REGION}"
+        
+        # Enable DNS hostnames (required for RDS)
         aws ec2 modify-vpc-attribute \
             --vpc-id "${VPC_ID}" \
             --enable-dns-hostnames \
             --region "${AWS_REGION}"
+        
+        echo "  ✓ Enabled DNS support and hostnames for VPC"
     fi
     
     # Create Internet Gateway
@@ -155,7 +180,7 @@ create_vpc() {
         --query 'InternetGateways[0].InternetGatewayId' \
         --output text 2>/dev/null || echo "None")
     
-    if [ "${IGW_ID}" != "None" ] && [ "${IGW_ID}" != "" ]; then
+    if [ "${IGW_ID}" != "None" ] && [ -n "${IGW_ID}" ]; then
         echo "  Internet Gateway already exists: ${IGW_ID}"
     else
         IGW_ID=$(aws ec2 create-internet-gateway \
@@ -176,17 +201,26 @@ create_vpc() {
         echo "  ✓ Created and attached Internet Gateway: ${IGW_ID}"
     fi
     
-    # Create public subnets in two availability zones
-    AZ1="${AWS_REGION}a"
-    AZ2="${AWS_REGION}b"
+    # Get availability zones for the region
+    AZ1=$(aws ec2 describe-availability-zones \
+        --region "${AWS_REGION}" \
+        --query 'AvailabilityZones[0].ZoneName' \
+        --output text)
+    AZ2=$(aws ec2 describe-availability-zones \
+        --region "${AWS_REGION}" \
+        --query 'AvailabilityZones[1].ZoneName' \
+        --output text)
     
+    echo "  Using availability zones: ${AZ1}, ${AZ2}"
+    
+    # Create public subnet 1
     PUBLIC_SUBNET_1=$(aws ec2 describe-subnets \
-        --filters "Name=tag:Name,Values=${VPC_NAME}-public-1" \
+        --filters "Name=tag:Name,Values=${VPC_NAME}-public-1" "Name=vpc-id,Values=${VPC_ID}" \
         --region "${AWS_REGION}" \
         --query 'Subnets[0].SubnetId' \
         --output text 2>/dev/null || echo "None")
     
-    if [ "${PUBLIC_SUBNET_1}" != "None" ] && [ "${PUBLIC_SUBNET_1}" != "" ]; then
+    if [ "${PUBLIC_SUBNET_1}" != "None" ] && [ -n "${PUBLIC_SUBNET_1}" ]; then
         echo "  Public subnet 1 already exists: ${PUBLIC_SUBNET_1}"
     else
         PUBLIC_SUBNET_1=$(aws ec2 create-subnet \
@@ -205,13 +239,14 @@ create_vpc() {
         echo "  ✓ Created public subnet 1: ${PUBLIC_SUBNET_1}"
     fi
     
+    # Create public subnet 2
     PUBLIC_SUBNET_2=$(aws ec2 describe-subnets \
-        --filters "Name=tag:Name,Values=${VPC_NAME}-public-2" \
+        --filters "Name=tag:Name,Values=${VPC_NAME}-public-2" "Name=vpc-id,Values=${VPC_ID}" \
         --region "${AWS_REGION}" \
         --query 'Subnets[0].SubnetId' \
         --output text 2>/dev/null || echo "None")
     
-    if [ "${PUBLIC_SUBNET_2}" != "None" ] && [ "${PUBLIC_SUBNET_2}" != "" ]; then
+    if [ "${PUBLIC_SUBNET_2}" != "None" ] && [ -n "${PUBLIC_SUBNET_2}" ]; then
         echo "  Public subnet 2 already exists: ${PUBLIC_SUBNET_2}"
     else
         PUBLIC_SUBNET_2=$(aws ec2 create-subnet \
@@ -230,14 +265,14 @@ create_vpc() {
         echo "  ✓ Created public subnet 2: ${PUBLIC_SUBNET_2}"
     fi
     
-    # Create private subnets for RDS
+    # Create private subnet 1 (for RDS and VPC connector)
     PRIVATE_SUBNET_1=$(aws ec2 describe-subnets \
-        --filters "Name=tag:Name,Values=${VPC_NAME}-private-1" \
+        --filters "Name=tag:Name,Values=${VPC_NAME}-private-1" "Name=vpc-id,Values=${VPC_ID}" \
         --region "${AWS_REGION}" \
         --query 'Subnets[0].SubnetId' \
         --output text 2>/dev/null || echo "None")
     
-    if [ "${PRIVATE_SUBNET_1}" != "None" ] && [ "${PRIVATE_SUBNET_1}" != "" ]; then
+    if [ "${PRIVATE_SUBNET_1}" != "None" ] && [ -n "${PRIVATE_SUBNET_1}" ]; then
         echo "  Private subnet 1 already exists: ${PRIVATE_SUBNET_1}"
     else
         PRIVATE_SUBNET_1=$(aws ec2 create-subnet \
@@ -256,13 +291,14 @@ create_vpc() {
         echo "  ✓ Created private subnet 1: ${PRIVATE_SUBNET_1}"
     fi
     
+    # Create private subnet 2 (for RDS and VPC connector)
     PRIVATE_SUBNET_2=$(aws ec2 describe-subnets \
-        --filters "Name=tag:Name,Values=${VPC_NAME}-private-2" \
+        --filters "Name=tag:Name,Values=${VPC_NAME}-private-2" "Name=vpc-id,Values=${VPC_ID}" \
         --region "${AWS_REGION}" \
         --query 'Subnets[0].SubnetId' \
         --output text 2>/dev/null || echo "None")
     
-    if [ "${PRIVATE_SUBNET_2}" != "None" ] && [ "${PRIVATE_SUBNET_2}" != "" ]; then
+    if [ "${PRIVATE_SUBNET_2}" != "None" ] && [ -n "${PRIVATE_SUBNET_2}" ]; then
         echo "  Private subnet 2 already exists: ${PRIVATE_SUBNET_2}"
     else
         PRIVATE_SUBNET_2=$(aws ec2 create-subnet \
@@ -283,12 +319,12 @@ create_vpc() {
     
     # Create route table for public subnets
     ROUTE_TABLE_ID=$(aws ec2 describe-route-tables \
-        --filters "Name=tag:Name,Values=${VPC_NAME}-public-rt" \
+        --filters "Name=tag:Name,Values=${VPC_NAME}-public-rt" "Name=vpc-id,Values=${VPC_ID}" \
         --region "${AWS_REGION}" \
         --query 'RouteTables[0].RouteTableId' \
         --output text 2>/dev/null || echo "None")
     
-    if [ "${ROUTE_TABLE_ID}" != "None" ] && [ "${ROUTE_TABLE_ID}" != "" ]; then
+    if [ "${ROUTE_TABLE_ID}" != "None" ] && [ -n "${ROUTE_TABLE_ID}" ]; then
         echo "  Route table already exists: ${ROUTE_TABLE_ID}"
     else
         ROUTE_TABLE_ID=$(aws ec2 create-route-table \
@@ -306,17 +342,17 @@ create_vpc() {
             --route-table-id "${ROUTE_TABLE_ID}" \
             --destination-cidr-block 0.0.0.0/0 \
             --gateway-id "${IGW_ID}" \
-            --region "${AWS_REGION}"
+            --region "${AWS_REGION}" > /dev/null
         
         aws ec2 associate-route-table \
             --subnet-id "${PUBLIC_SUBNET_1}" \
             --route-table-id "${ROUTE_TABLE_ID}" \
-            --region "${AWS_REGION}"
+            --region "${AWS_REGION}" > /dev/null
         
         aws ec2 associate-route-table \
             --subnet-id "${PUBLIC_SUBNET_2}" \
             --route-table-id "${ROUTE_TABLE_ID}" \
-            --region "${AWS_REGION}"
+            --region "${AWS_REGION}" > /dev/null
         
         echo "  ✓ Created route table and associated with public subnets: ${ROUTE_TABLE_ID}"
     fi
@@ -334,7 +370,7 @@ create_security_groups() {
         --query 'SecurityGroups[0].GroupId' \
         --output text 2>/dev/null || echo "None")
     
-    if [ "${RDS_SG_ID}" != "None" ] && [ "${RDS_SG_ID}" != "" ]; then
+    if [ "${RDS_SG_ID}" != "None" ] && [ -n "${RDS_SG_ID}" ]; then
         echo "  RDS security group already exists: ${RDS_SG_ID}"
     else
         RDS_SG_ID=$(aws ec2 create-security-group \
@@ -348,19 +384,19 @@ create_security_groups() {
         echo "  ✓ Created RDS security group: ${RDS_SG_ID}"
     fi
     
-    # Security group for App Runner (backend)
+    # Security group for App Runner VPC connector
     BACKEND_SG_ID=$(aws ec2 describe-security-groups \
         --filters "Name=group-name,Values=${PROJECT_NAME}-${ENV_NAME}-backend-sg" "Name=vpc-id,Values=${VPC_ID}" \
         --region "${AWS_REGION}" \
         --query 'SecurityGroups[0].GroupId' \
         --output text 2>/dev/null || echo "None")
     
-    if [ "${BACKEND_SG_ID}" != "None" ] && [ "${BACKEND_SG_ID}" != "" ]; then
+    if [ "${BACKEND_SG_ID}" != "None" ] && [ -n "${BACKEND_SG_ID}" ]; then
         echo "  Backend security group already exists: ${BACKEND_SG_ID}"
     else
         BACKEND_SG_ID=$(aws ec2 create-security-group \
             --group-name "${PROJECT_NAME}-${ENV_NAME}-backend-sg" \
-            --description "Security group for App Runner backend" \
+            --description "Security group for App Runner backend VPC connector" \
             --vpc-id "${VPC_ID}" \
             --region "${AWS_REGION}" \
             --query 'GroupId' \
@@ -369,23 +405,23 @@ create_security_groups() {
         echo "  ✓ Created backend security group: ${BACKEND_SG_ID}"
     fi
     
-    # Allow backend to access RDS - check using describe-security-groups instead
-    EXISTING_RULE=$(aws ec2 describe-security-groups \
+    # Allow backend security group to access RDS on port 5432
+    EXISTING_RULES=$(aws ec2 describe-security-groups \
         --group-ids "${RDS_SG_ID}" \
         --region "${AWS_REGION}" \
-        --query "SecurityGroups[0].IpPermissions[?FromPort==\`5432\` && ToPort==\`5432\`].UserIdGroupPairs[?GroupId=='${BACKEND_SG_ID}'].GroupId" \
+        --query "SecurityGroups[0].IpPermissions[?FromPort==\`5432\` && ToPort==\`5432\` && IpProtocol=='tcp'].UserIdGroupPairs[?GroupId=='${BACKEND_SG_ID}'].GroupId" \
         --output text 2>/dev/null || echo "")
     
-    if [ -z "${EXISTING_RULE}" ]; then
+    if [ -z "${EXISTING_RULES}" ] || [ "${EXISTING_RULES}" = "None" ]; then
         aws ec2 authorize-security-group-ingress \
             --group-id "${RDS_SG_ID}" \
             --protocol tcp \
             --port 5432 \
             --source-group "${BACKEND_SG_ID}" \
             --region "${AWS_REGION}" 2>/dev/null || true
-        echo "  ✓ Allowed backend to access RDS on port 5432"
+        echo "  ✓ Added ingress rule: backend -> RDS on port 5432"
     else
-        echo "  Backend already has access to RDS"
+        echo "  Ingress rule already exists: backend -> RDS on port 5432"
     fi
 }
 
@@ -403,7 +439,7 @@ create_db_subnet_group() {
             --db-subnet-group-name "${DB_SUBNET_GROUP}" \
             --db-subnet-group-description "Subnet group for ${PROJECT_NAME} ${ENV_NAME} RDS" \
             --subnet-ids "${PRIVATE_SUBNET_1}" "${PRIVATE_SUBNET_2}" \
-            --region "${AWS_REGION}"
+            --region "${AWS_REGION}" > /dev/null
         
         echo "  ✓ Created DB subnet group: ${DB_SUBNET_GROUP}"
     fi
@@ -415,19 +451,34 @@ create_rds_instance() {
     echo "Creating RDS PostgreSQL instance..."
     
     # Check if RDS instance already exists
-    if aws rds describe-db-instances --db-instance-identifier "${DB_INSTANCE_NAME}" --region "${AWS_REGION}" &> /dev/null; then
-        echo "  RDS instance already exists"
+    DB_STATUS=$(aws rds describe-db-instances \
+        --db-instance-identifier "${DB_INSTANCE_NAME}" \
+        --region "${AWS_REGION}" \
+        --query 'DBInstances[0].DBInstanceStatus' \
+        --output text 2>/dev/null || echo "not-found")
+    
+    if [ "${DB_STATUS}" != "not-found" ]; then
+        echo "  RDS instance already exists (status: ${DB_STATUS})"
+        
+        if [ "${DB_STATUS}" != "available" ]; then
+            echo "  Waiting for RDS instance to be available..."
+            aws rds wait db-instance-available \
+                --db-instance-identifier "${DB_INSTANCE_NAME}" \
+                --region "${AWS_REGION}"
+        fi
+        
         DB_ENDPOINT=$(aws rds describe-db-instances \
             --db-instance-identifier "${DB_INSTANCE_NAME}" \
             --region "${AWS_REGION}" \
             --query 'DBInstances[0].Endpoint.Address' \
             --output text)
+        echo "  ✓ RDS endpoint: ${DB_ENDPOINT}"
     else
         aws rds create-db-instance \
             --db-instance-identifier "${DB_INSTANCE_NAME}" \
             --db-instance-class db.t3.micro \
             --engine postgres \
-            --engine-version 17.2 \
+            --engine-version "16.3" \
             --master-username dbadmin \
             --master-user-password "${DB_PASSWORD}" \
             --allocated-storage 20 \
@@ -435,10 +486,11 @@ create_rds_instance() {
             --vpc-security-group-ids "${RDS_SG_ID}" \
             --no-publicly-accessible \
             --backup-retention-period 7 \
-            --region "${AWS_REGION}"
+            --storage-encrypted \
+            --region "${AWS_REGION}" > /dev/null
         
         echo "  ✓ RDS instance creation initiated: ${DB_INSTANCE_NAME}"
-        echo "  Waiting for RDS instance to be available (this may take several minutes)..."
+        echo "  Waiting for RDS instance to be available (this may take 5-10 minutes)..."
         
         aws rds wait db-instance-available \
             --db-instance-identifier "${DB_INSTANCE_NAME}" \
@@ -463,24 +515,11 @@ create_app_runner_role() {
     
     # Check if role already exists
     if aws iam get-role --role-name "${ROLE_NAME}" &> /dev/null 2>&1; then
-        echo "  IAM role already exists: ${ROLE_NAME}"
+        echo "  IAM instance role already exists: ${ROLE_NAME}"
         ROLE_ARN=$(aws iam get-role --role-name "${ROLE_NAME}" --query 'Role.Arn' --output text)
     else
-        # Create trust policy
-        cat > /tmp/trust-policy.json <<EOF
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Principal": {
-        "Service": "tasks.apprunner.amazonaws.com"
-      },
-      "Action": "sts:AssumeRole"
-    }
-  ]
-}
-EOF
+        # Create trust policy for App Runner tasks
+        echo '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"tasks.apprunner.amazonaws.com"},"Action":"sts:AssumeRole"}]}' > /tmp/trust-policy.json
         
         ROLE_ARN=$(aws iam create-role \
             --role-name "${ROLE_NAME}" \
@@ -488,14 +527,8 @@ EOF
             --query 'Role.Arn' \
             --output text)
         
-        echo "  ✓ Created IAM role: ${ROLE_ARN}"
-        
-        # Attach policies for ECR access
-        aws iam attach-role-policy \
-            --role-name "${ROLE_NAME}" \
-            --policy-arn "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
-        
-        echo "  ✓ Attached ECR read policy to role"
+        rm -f /tmp/trust-policy.json
+        echo "  ✓ Created IAM instance role: ${ROLE_ARN}"
     fi
     
     # Create ECR access role for App Runner
@@ -506,20 +539,7 @@ EOF
         ECR_ACCESS_ROLE_ARN=$(aws iam get-role --role-name "${ECR_ACCESS_ROLE_NAME}" --query 'Role.Arn' --output text)
     else
         # Create trust policy for App Runner build service
-        cat > /tmp/ecr-trust-policy.json <<EOF
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Principal": {
-        "Service": "build.apprunner.amazonaws.com"
-      },
-      "Action": "sts:AssumeRole"
-    }
-  ]
-}
-EOF
+        echo '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"build.apprunner.amazonaws.com"},"Action":"sts:AssumeRole"}]}' > /tmp/ecr-trust-policy.json
         
         ECR_ACCESS_ROLE_ARN=$(aws iam create-role \
             --role-name "${ECR_ACCESS_ROLE_NAME}" \
@@ -527,18 +547,19 @@ EOF
             --query 'Role.Arn' \
             --output text)
         
+        rm -f /tmp/ecr-trust-policy.json
         echo "  ✓ Created ECR access role: ${ECR_ACCESS_ROLE_ARN}"
         
-        # Attach ECR read policy
+        # Attach ECR access policy
         aws iam attach-role-policy \
             --role-name "${ECR_ACCESS_ROLE_NAME}" \
             --policy-arn "arn:aws:iam::aws:policy/service-role/AWSAppRunnerServicePolicyForECRAccess"
         
         echo "  ✓ Attached ECR access policy"
         
-        # Wait for role to propagate
+        # Wait for role to propagate (IAM is eventually consistent)
         echo "  Waiting for IAM role to propagate..."
-        sleep 10
+        sleep 15
     fi
 }
 
@@ -549,13 +570,13 @@ create_vpc_connector() {
     
     VPC_CONNECTOR_NAME="${PROJECT_NAME}-${ENV_NAME}-vpc-connector"
     
-    # Check if VPC connector already exists
+    # Check if VPC connector already exists (and is active)
     VPC_CONNECTOR_ARN=$(aws apprunner list-vpc-connectors \
         --region "${AWS_REGION}" \
-        --query "VpcConnectors[?VpcConnectorName=='${VPC_CONNECTOR_NAME}'].VpcConnectorArn" \
+        --query "VpcConnectors[?VpcConnectorName=='${VPC_CONNECTOR_NAME}' && Status=='ACTIVE'].VpcConnectorArn | [0]" \
         --output text 2>/dev/null || echo "")
     
-    if [ -n "${VPC_CONNECTOR_ARN}" ] && [ "${VPC_CONNECTOR_ARN}" != "None" ]; then
+    if [ -n "${VPC_CONNECTOR_ARN}" ] && [ "${VPC_CONNECTOR_ARN}" != "None" ] && [ "${VPC_CONNECTOR_ARN}" != "null" ]; then
         echo "  VPC connector already exists: ${VPC_CONNECTOR_ARN}"
     else
         VPC_CONNECTOR_ARN=$(aws apprunner create-vpc-connector \
@@ -567,10 +588,43 @@ create_vpc_connector() {
             --output text)
         
         echo "  ✓ Created VPC connector: ${VPC_CONNECTOR_ARN}"
-        echo "  Waiting for VPC connector to be active..."
         
         # Wait for VPC connector to be active
-        sleep 15
+        echo "  Waiting for VPC connector to be active..."
+        local max_attempts=20
+        local attempt=1
+        while [ $attempt -le $max_attempts ]; do
+            STATUS=$(aws apprunner describe-vpc-connector \
+                --vpc-connector-arn "${VPC_CONNECTOR_ARN}" \
+                --region "${AWS_REGION}" \
+                --query 'VpcConnector.Status' \
+                --output text 2>/dev/null || echo "UNKNOWN")
+            
+            if [ "${STATUS}" = "ACTIVE" ]; then
+                echo "  ✓ VPC connector is active"
+                break
+            fi
+            
+            echo "    Status: ${STATUS} (attempt ${attempt}/${max_attempts})"
+            sleep 5
+            attempt=$((attempt + 1))
+        done
+    fi
+}
+
+# Function to check if ECR repository has images
+check_ecr_image_exists() {
+    local repo_name=$1
+    local image_count=$(aws ecr list-images \
+        --repository-name "${repo_name}" \
+        --region "${AWS_REGION}" \
+        --query 'length(imageIds)' \
+        --output text 2>/dev/null || echo "0")
+    
+    if [ "${image_count}" -gt 0 ]; then
+        return 0
+    else
+        return 1
     fi
 }
 
@@ -579,12 +633,41 @@ create_app_runner_services() {
     echo ""
     echo "Creating App Runner services..."
     
-    # Get AWS account ID
-    ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+    # Check if Docker images exist in ECR
+    if ! check_ecr_image_exists "${ECR_BACKEND_REPO}"; then
+        echo ""
+        echo "  ⚠ WARNING: No images found in backend ECR repository (${ECR_BACKEND_REPO})"
+        echo "  App Runner services require Docker images to be pushed first."
+        echo ""
+        echo "  To push images, run:"
+        echo "    cd infrastructure/aws"
+        echo "    ./deploy.sh ${AWS_REGION}"
+        echo ""
+        echo "  Then re-run this script to create App Runner services."
+        echo ""
+        SKIP_APPRUNNER=true
+        return 0
+    fi
+    
+    if ! check_ecr_image_exists "${ECR_FRONTEND_REPO}"; then
+        echo ""
+        echo "  ⚠ WARNING: No images found in frontend ECR repository (${ECR_FRONTEND_REPO})"
+        echo "  App Runner services require Docker images to be pushed first."
+        echo ""
+        echo "  To push images, run:"
+        echo "    cd infrastructure/aws"
+        echo "    ./deploy.sh ${AWS_REGION}"
+        echo ""
+        echo "  Then re-run this script to create App Runner services."
+        echo ""
+        SKIP_APPRUNNER=true
+        return 0
+    fi
     
     # Backend service
-    BACKEND_SERVICE_ARN="arn:aws:apprunner:${AWS_REGION}:${ACCOUNT_ID}:service/${BACKEND_SERVICE_NAME}"
-    if aws apprunner describe-service --service-arn "${BACKEND_SERVICE_ARN}" --region "${AWS_REGION}" &> /dev/null 2>&1; then
+    BACKEND_SERVICE_ARN=$(get_apprunner_service_arn "${BACKEND_SERVICE_NAME}")
+    
+    if [ -n "${BACKEND_SERVICE_ARN}" ] && [ "${BACKEND_SERVICE_ARN}" != "None" ]; then
         echo "  Backend App Runner service already exists"
         BACKEND_SERVICE_URL=$(aws apprunner describe-service \
             --service-arn "${BACKEND_SERVICE_ARN}" \
@@ -592,8 +675,8 @@ create_app_runner_services() {
             --query 'Service.ServiceUrl' \
             --output text)
     else
-        # Create backend service configuration
-        cat > /tmp/backend-service.json <<EOF
+        # Write backend service configuration to temp file
+        cat > /tmp/backend-service.json << EOFBACKEND
 {
   "ServiceName": "${BACKEND_SERVICE_NAME}",
   "SourceConfiguration": {
@@ -627,10 +710,14 @@ create_app_runner_services() {
   },
   "HealthCheckConfiguration": {
     "Protocol": "HTTP",
-    "Path": "/health"
+    "Path": "/health",
+    "Interval": 10,
+    "Timeout": 5,
+    "HealthyThreshold": 1,
+    "UnhealthyThreshold": 5
   }
 }
-EOF
+EOFBACKEND
         
         BACKEND_SERVICE_ARN=$(aws apprunner create-service \
             --cli-input-json file:///tmp/backend-service.json \
@@ -638,23 +725,28 @@ EOF
             --query 'Service.ServiceArn' \
             --output text)
         
+        rm -f /tmp/backend-service.json
         echo "  ✓ Backend App Runner service created: ${BACKEND_SERVICE_ARN}"
         
         # Wait for service to be running using polling
-        wait_for_apprunner_service "${BACKEND_SERVICE_ARN}" "backend service"
+        if ! wait_for_apprunner_service "${BACKEND_SERVICE_ARN}" "backend service"; then
+            echo "  ✗ Backend service failed to start. Check AWS Console for details."
+            return 1
+        fi
         
         BACKEND_SERVICE_URL=$(aws apprunner describe-service \
             --service-arn "${BACKEND_SERVICE_ARN}" \
             --region "${AWS_REGION}" \
             --query 'Service.ServiceUrl' \
             --output text)
-        
-        echo "  ✓ Backend service URL: https://${BACKEND_SERVICE_URL}"
     fi
     
+    echo "  ✓ Backend service URL: https://${BACKEND_SERVICE_URL}"
+    
     # Frontend service
-    FRONTEND_SERVICE_ARN="arn:aws:apprunner:${AWS_REGION}:${ACCOUNT_ID}:service/${FRONTEND_SERVICE_NAME}"
-    if aws apprunner describe-service --service-arn "${FRONTEND_SERVICE_ARN}" --region "${AWS_REGION}" &> /dev/null 2>&1; then
+    FRONTEND_SERVICE_ARN=$(get_apprunner_service_arn "${FRONTEND_SERVICE_NAME}")
+    
+    if [ -n "${FRONTEND_SERVICE_ARN}" ] && [ "${FRONTEND_SERVICE_ARN}" != "None" ]; then
         echo "  Frontend App Runner service already exists"
         FRONTEND_SERVICE_URL=$(aws apprunner describe-service \
             --service-arn "${FRONTEND_SERVICE_ARN}" \
@@ -662,8 +754,8 @@ EOF
             --query 'Service.ServiceUrl' \
             --output text)
     else
-        # Create frontend service configuration
-        cat > /tmp/frontend-service.json <<EOF
+        # Write frontend service configuration to temp file
+        cat > /tmp/frontend-service.json << EOFFRONTEND
 {
   "ServiceName": "${FRONTEND_SERVICE_NAME}",
   "SourceConfiguration": {
@@ -688,10 +780,14 @@ EOF
   },
   "HealthCheckConfiguration": {
     "Protocol": "HTTP",
-    "Path": "/"
+    "Path": "/",
+    "Interval": 10,
+    "Timeout": 5,
+    "HealthyThreshold": 1,
+    "UnhealthyThreshold": 5
   }
 }
-EOF
+EOFFRONTEND
         
         FRONTEND_SERVICE_ARN=$(aws apprunner create-service \
             --cli-input-json file:///tmp/frontend-service.json \
@@ -699,23 +795,29 @@ EOF
             --query 'Service.ServiceArn' \
             --output text)
         
+        rm -f /tmp/frontend-service.json
         echo "  ✓ Frontend App Runner service created: ${FRONTEND_SERVICE_ARN}"
         
         # Wait for service to be running using polling
-        wait_for_apprunner_service "${FRONTEND_SERVICE_ARN}" "frontend service"
+        if ! wait_for_apprunner_service "${FRONTEND_SERVICE_ARN}" "frontend service"; then
+            echo "  ✗ Frontend service failed to start. Check AWS Console for details."
+            return 1
+        fi
         
         FRONTEND_SERVICE_URL=$(aws apprunner describe-service \
             --service-arn "${FRONTEND_SERVICE_ARN}" \
             --region "${AWS_REGION}" \
             --query 'Service.ServiceUrl' \
             --output text)
-        
-        echo "  ✓ Frontend service URL: https://${FRONTEND_SERVICE_URL}"
     fi
+    
+    echo "  ✓ Frontend service URL: https://${FRONTEND_SERVICE_URL}"
 }
 
 # Main execution
 main() {
+    SKIP_APPRUNNER=false
+    
     check_aws_cli
     check_aws_credentials
     create_ecr_repositories
@@ -746,12 +848,22 @@ main() {
     echo "  Username: dbadmin"
     echo "  Password: ${DB_PASSWORD}"
     echo "  Database: postgres"
+    echo "  Connection: postgresql://dbadmin:${DB_PASSWORD}@${DB_ENDPOINT}:5432/postgres"
     echo ""
-    echo "App Runner Services:"
-    echo "  Backend:  https://${BACKEND_SERVICE_URL}"
-    echo "  Frontend: https://${FRONTEND_SERVICE_URL}"
+    
+    if [ "${SKIP_APPRUNNER}" = "true" ]; then
+        echo "App Runner Services: NOT CREATED (images not yet pushed)"
+        echo ""
+        echo "NEXT STEPS:"
+        echo "  1. Push Docker images: ./deploy.sh ${AWS_REGION}"
+        echo "  2. Re-run this script to create App Runner services"
+    else
+        echo "App Runner Services:"
+        echo "  Backend:  https://${BACKEND_SERVICE_URL}"
+        echo "  Frontend: https://${FRONTEND_SERVICE_URL}"
+    fi
     echo ""
-    echo "SAVE THE DATABASE PASSWORD SECURELY!"
+    echo "⚠ SAVE THE DATABASE PASSWORD SECURELY!"
     echo "================================================"
 }
 
