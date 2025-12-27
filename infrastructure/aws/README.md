@@ -8,7 +8,7 @@ The AWS infrastructure consists of:
 
 - **Amazon ECR**: Container registry for storing Docker images
 - **Amazon VPC**: Virtual Private Cloud with public and private subnets
-- **Amazon RDS**: PostgreSQL 17 database (db.t3.micro for staging)
+- **Amazon RDS**: PostgreSQL 16 database (db.t3.micro for staging)
 - **AWS App Runner**: Managed container services for frontend and backend
 - **VPC Connector**: Connects App Runner to RDS in private subnets
 - **Security Groups**: Control network access between services
@@ -59,22 +59,22 @@ chmod +x *.sh
 
 Parameters (all optional):
 - `environment`: Environment name (default: `staging`)
-- `region`: AWS region (default: `us-east-1`)
+- `region`: AWS region (default: `eu-central-1`)
 - `db-password`: Database password (auto-generated if not provided)
 
 Example:
 ```bash
-./create-infrastructure.sh staging us-east-1
+./create-infrastructure.sh staging eu-central-1
 ```
 
 This script will:
 - Create ECR repositories for frontend and backend
-- Set up VPC with public and private subnets
+- Set up VPC with public and private subnets (in 2 availability zones)
 - Create security groups
-- Launch RDS PostgreSQL instance
+- Launch RDS PostgreSQL instance (encrypted at rest)
 - Create IAM roles for App Runner
 - Create VPC connector
-- Deploy App Runner services
+- Deploy App Runner services (if Docker images are available in ECR)
 
 **Note**: The script is idempotent - it can be run multiple times safely.
 
@@ -89,33 +89,35 @@ After infrastructure is created, build and push images:
 ```
 
 Parameters (all optional):
-- `region`: AWS region (default: `us-east-1`)
+- `region`: AWS region (default: `eu-central-1`)
 - `tag`: Image tag (default: `latest`)
 - `auto-deploy`: Set to `true` to automatically trigger deployments without prompt (default: `false`)
 
 Examples:
 ```bash
 # Interactive mode (will prompt for deployment)
-./deploy.sh us-east-1 latest
+./deploy.sh eu-central-1 latest
 
 # Auto-deploy mode (for CI/CD)
-./deploy.sh us-east-1 latest true
+./deploy.sh eu-central-1 latest true
 ```
 
 The script will:
 - Authenticate with ECR
-- Build backend Docker image
+- Build backend Docker image (with `--platform linux/amd64` for App Runner compatibility)
 - Build frontend Docker image
 - Push both images to ECR
 - Optionally trigger App Runner deployments
+
+**Note**: If App Runner services don't exist yet, re-run `create-infrastructure.sh` after pushing images.
 
 ### 3. Access Your Application
 
 After deployment completes, the script outputs the URLs:
 
 ```
-Backend:  https://xxxxx.us-east-1.awsapprunner.com
-Frontend: https://yyyyy.us-east-1.awsapprunner.com
+Backend:  https://xxxxx.eu-central-1.awsapprunner.com
+Frontend: https://yyyyy.eu-central-1.awsapprunner.com
 ```
 
 Access the frontend URL in your browser to use the application.
@@ -162,21 +164,22 @@ Set in App Runner service configuration:
 
 ## Cost Estimates
 
-Approximate monthly costs for staging environment in us-east-1:
+Approximate monthly costs for staging environment in eu-central-1:
 
 | Service | Configuration | Estimated Cost |
 |---------|--------------|----------------|
-| RDS PostgreSQL | db.t3.micro, 20GB storage | ~$15-20/month |
+| RDS PostgreSQL | db.t3.micro, 20GB storage, encrypted | ~$15-25/month |
 | App Runner (Backend) | 1 vCPU, 2GB RAM | ~$25-30/month (depends on usage) |
 | App Runner (Frontend) | 1 vCPU, 2GB RAM | ~$25-30/month (depends on usage) |
 | ECR Storage | Per GB stored | ~$0.10/GB/month |
 | Data Transfer | Outbound data | Varies by usage |
-| **Total Estimate** | | **~$70-90/month** |
+| **Total Estimate** | | **~$70-100/month** |
 
 **Notes**:
 - App Runner charges for CPU/memory usage (prorated per second)
 - Additional charges apply for data transfer out to the internet
 - Costs may vary based on actual usage patterns
+- eu-central-1 prices may be slightly higher than us-east-1
 
 ## Updating the Application
 
@@ -189,7 +192,7 @@ To deploy updates:
 
 2. **Manually**:
    ```bash
-   ./deploy.sh us-east-1 v1.2.3
+   ./deploy.sh eu-central-1 v1.2.3
    ```
    - Then trigger deployment when prompted
 
@@ -203,114 +206,82 @@ To completely remove all AWS resources:
 
 Example:
 ```bash
-./delete-infrastructure.sh staging us-east-1
+./delete-infrastructure.sh staging eu-central-1
 ```
 
-**Warning**: This will:
-- Delete all App Runner services
-- Delete RDS database (**all data will be lost**)
-- Delete VPC and networking
-- Delete IAM roles
-- Optionally delete ECR repositories
+**Warning**: This will delete all data including the database!
 
-The script will prompt for confirmation before deleting.
+The deletion script will:
+- Delete App Runner services (waits for completion)
+- Delete VPC connector
+- Delete RDS instance (skips final snapshot)
+- Delete DB subnet group
+- Delete security groups (revokes rules first)
+- Delete VPC components (subnets, route tables, internet gateway)
+- Delete IAM roles
+- Optionally delete ECR repositories (prompts for confirmation)
 
 ## Troubleshooting
 
-### Issue: "Error: AWS credentials are not configured properly"
+### Common Issues
 
-**Solution**: Run `aws configure` and provide your AWS credentials.
+1. **"App Runner services not created"**
+   - This happens when ECR repositories are empty
+   - Run `./deploy.sh` first to push images
+   - Then re-run `./create-infrastructure.sh`
 
-### Issue: "Error: Backend ECR repository not found"
+2. **ECR repository not found**
+   - Run `./create-infrastructure.sh` first to create the repositories
 
-**Solution**: Run `./create-infrastructure.sh` first to create resources.
+3. **Docker build fails**
+   - Ensure Docker is running: `docker info`
+   - Check you have enough disk space
+   - Try `docker system prune` to clean up old images
 
-### Issue: App Runner service fails to start
+4. **RDS connection timeout**
+   - Ensure VPC connector is properly configured
+   - Check security group allows traffic from backend SG to RDS on port 5432
+   - Verify RDS instance is in "available" state
 
-**Solutions**:
-1. Check App Runner service logs in AWS Console
-2. Verify ECR images were pushed successfully:
-   ```bash
-   aws ecr describe-images --repository-name direct-marketing-backend --region us-east-1
-   ```
-3. Check that IAM roles have correct permissions
-4. Verify VPC connector is active
+5. **App Runner service CREATE_FAILED**
+   - Check AWS Console for detailed error messages
+   - Common causes: invalid Docker image, incorrect port configuration
+   - Verify health check endpoint exists (`/health` for backend, `/` for frontend)
 
-### Issue: Backend cannot connect to database
+6. **Security group deletion fails**
+   - Wait for App Runner services to fully delete first
+   - The script handles this by deleting services before security groups
 
-**Solutions**:
-1. Verify RDS instance is running:
-   ```bash
-   aws rds describe-db-instances --region us-east-1
-   ```
-2. Check security group rules allow backend to access RDS on port 5432
-3. Verify `DATABASE_URL` environment variable is set correctly in App Runner
-4. Check VPC connector is properly configured
+7. **VPC deletion fails**
+   - Ensure all resources in the VPC are deleted first
+   - Check for any ENIs (Elastic Network Interfaces) still attached
 
-### Issue: Frontend cannot connect to backend
+### Checking Service Logs
 
-**Solutions**:
-1. Verify backend service is running and healthy
-2. Check `NEXT_PUBLIC_API_BASE_URL` is set correctly in frontend App Runner config
-3. Test backend API directly: `curl https://<backend-url>/health`
+```bash
+# Get App Runner service ARN
+aws apprunner list-services --region eu-central-1
 
-### Issue: Docker build fails
+# View service details
+aws apprunner describe-service --service-arn <service-arn> --region eu-central-1
+```
 
-**Solutions**:
-1. Ensure Docker is running: `docker ps`
-2. Check Dockerfile syntax
-3. Verify all required files are present in build context
-4. Try building locally first: `docker build -t test ./backend`
-
-### Viewing Logs
-
-**App Runner logs**:
-1. Go to AWS Console > App Runner
+For detailed logs, use the AWS Console:
+1. Go to App Runner in the AWS Console
 2. Select your service
 3. Click on "Logs" tab
 
-**RDS logs**:
-1. Go to AWS Console > RDS
-2. Select your database instance
-3. Click on "Logs & events" tab
-
 ## Security Best Practices
 
-1. **Database Access**:
-   - RDS is in private subnets (not publicly accessible)
-   - Only backend service can connect via security groups
+For production environments, consider:
 
-2. **Secrets Management**:
-   - **IMPORTANT**: For production environments, use AWS Secrets Manager or Parameter Store instead of environment variables for database passwords
-   - The current implementation uses environment variables for simplicity in staging
-   - Store database password securely (e.g., AWS Secrets Manager)
-   - Rotate credentials regularly
-   - Never commit secrets to source control
-
-3. **HTTPS**:
-   - App Runner provides automatic HTTPS with AWS-managed certificates
-   - All external traffic is encrypted
-
-4. **IAM Roles**:
-   - Services use IAM roles with minimal required permissions
-   - No long-lived credentials in containers
-
-5. **Staging Access**:
-   - Consider adding basic authentication middleware for staging environment
-   - Restrict access via IP allowlists if needed
-   - Use AWS WAF for additional protection
-
-## Additional Resources
-
-- [AWS App Runner Documentation](https://docs.aws.amazon.com/apprunner/)
-- [Amazon RDS Documentation](https://docs.aws.amazon.com/rds/)
-- [Amazon ECR Documentation](https://docs.aws.amazon.com/ecr/)
-- [AWS CLI Reference](https://docs.aws.amazon.com/cli/)
-
-## Support
-
-For issues or questions:
-1. Check the troubleshooting section above
-2. Review AWS service logs
-3. Consult AWS documentation
-4. Open an issue in the project repository
+1. **Use AWS Secrets Manager** for database credentials instead of environment variables
+2. **Enable VPC Flow Logs** for network monitoring
+3. **Set up AWS WAF** for web application firewall protection
+4. **Enable RDS automated backups** with longer retention
+5. **Use larger RDS instance** (db.t3.small or larger) for production workloads
+6. **Enable Multi-AZ** for RDS for high availability
+7. **Set up CloudWatch alarms** for monitoring
+8. **Implement proper IAM policies** with least privilege principle
+9. **Enable AWS CloudTrail** for audit logging
+10. **Consider using AWS Certificate Manager** for custom domain SSL
