@@ -8,10 +8,10 @@ on:
       aws_region:
         description: 'AWS Region'
         required: false
-        default: 'us-east-1'
+        default: 'eu-central-1'
 
 env:
-  AWS_REGION: ${{ github.event.inputs.aws_region || 'us-east-1' }}
+  AWS_REGION: ${{ github.event.inputs.aws_region || 'eu-central-1' }}
 
 jobs:
   deploy:
